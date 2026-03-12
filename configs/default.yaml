@@ -1,0 +1,132 @@
+# =============================================================================
+# AI-Generated Audio Detection System — Default Configuration
+# =============================================================================
+
+# --- Audio Preprocessing ---
+audio:
+  sample_rate: 16000          # All audio resampled to 16kHz
+  duration_sec: 4.0           # Clip length in seconds
+  n_samples: 64000            # sample_rate * duration_sec
+  mel:
+    n_mels: 128               # Number of Mel frequency bins
+    n_fft: 1024               # FFT window size
+    hop_length: 256            # Hop length for STFT
+    f_min: 0                   # Minimum frequency
+    f_max: 8000                # Maximum frequency (Nyquist for 16kHz)
+    power: 2.0                 # Power spectrogram exponent
+    normalize: true            # Apply per-sample normalization
+
+# --- Codec Augmentation ---
+augmentation:
+  enabled: true
+  probability: 0.5             # Probability of applying codec augmentation per sample
+  codecs:
+    mp3:
+      bitrates: [32, 64, 128]  # kbps
+    aac:
+      bitrates: [32, 64]       # kbps
+    opus:
+      bitrates: [6, 12, 24]    # kbps
+    voip:
+      sample_rate: 8000        # Downsample to 8kHz
+      codec: "mulaw"           # G.711 mu-law
+
+# --- Dataset Paths ---
+data:
+  root_dir: "data"
+  asvspoof2019:
+    root: "data/ASVspoof2019_LA"
+    protocols_dir: "data/ASVspoof2019_LA/ASVspoof2019_LA_cm_protocols"
+    flac_dir: "data/ASVspoof2019_LA/ASVspoof2019_LA_{partition}/flac"
+  asvspoof2021:
+    root: "data/ASVspoof2021_LA"
+    flac_dir: "data/ASVspoof2021_LA/flac"
+    protocols_file: "data/ASVspoof2021_LA/ASVspoof2021_LA_cm_protocols/ASVspoof2021.LA.cm.eval.trl.txt"
+  wavefake:
+    root: "data/WaveFake"
+  musiccaps:
+    root: "data/MusicCaps"
+    metadata_csv: "data/MusicCaps/musiccaps-public.csv"
+  ai_music:
+    root: "data/AI_Music"       # Self-collected Suno/Udio samples
+
+# --- DataLoader ---
+dataloader:
+  batch_size: 32
+  num_workers: 4
+  pin_memory: true
+  prefetch_factor: 2
+
+# --- Model Architecture ---
+model:
+  projection_dim: 256           # Common dimension for fusion tokens
+  resnet:
+    backbone: "resnet34"
+    pretrained: true
+    feature_dim: 512
+  wavlm:
+    model_name: "microsoft/wavlm-base-plus"
+    freeze_layers: 8            # Freeze bottom 8 of 12 layers (fine-tune top 4)
+    feature_dim: 768
+  rawnet2:
+    sinc_channels: 128
+    feature_dim: 128
+  fusion:
+    num_heads: 4
+    num_layers: 2
+    dim_feedforward: 512
+    dropout: 0.1
+  classifier:
+    num_classes: 2
+    dropout: 0.3
+
+# --- Training ---
+training:
+  epochs: 50
+  optimizer:
+    name: "adamw"
+    lr: 0.0001
+    weight_decay: 0.0001
+    betas: [0.9, 0.999]
+  scheduler:
+    name: "cosine"
+    warmup_epochs: 5
+    min_lr: 0.000001
+  early_stopping:
+    patience: 10
+    metric: "eer"
+    mode: "min"
+  gradient_clip: 1.0
+  mixed_precision: true         # Use AMP on GPU
+
+# --- Checkpointing ---
+checkpoint:
+  save_dir: "checkpoints"
+  save_every_epoch: true
+  keep_top_k: 3                 # Keep top-K checkpoints by EER
+  drive_mount: "/content/drive/MyDrive/AudioDetection/checkpoints"  # Colab Google Drive path
+
+# --- Logging ---
+logging:
+  console_level: "INFO"
+  wandb:
+    enabled: true
+    project: "ai-audio-detection"
+    entity: null                # Set to your W&B username
+    tags: ["capstone", "audio-deepfake"]
+    log_every_n_steps: 50
+
+# --- Smoke Test Mode ---
+smoke_test:
+  enabled: false
+  num_samples: 10
+  num_batches: 2
+  batch_size: 4
+
+# --- Evaluation ---
+evaluation:
+  metrics: ["eer", "min_dcf"]
+  min_dcf:
+    p_target: 0.05
+    c_miss: 1.0
+    c_fa: 1.0
