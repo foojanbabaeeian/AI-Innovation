@@ -1,0 +1,82 @@
+# Deployment for the WebSocket inference server (browser extension backend).
+# Runs on CPU with multiple replicas for horizontal scaling.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-audio-inference
+  namespace: default
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: ai-audio-inference
+  template:
+    metadata:
+      labels:
+        app: ai-audio-inference
+    spec:
+      containers:
+        - name: inference
+          image: ai-audio-detection:latest
+          command:
+            - python
+            - -m
+            - src.inference.server
+            - --checkpoint
+            - /mnt/outputs/ai_audio_detection_k8s/checkpoint_best.pt
+            - --config
+            - configs/default.yaml
+            - --port
+            - "8765"
+            - --device
+            - "cpu"
+            - --threshold
+            - "0.7"
+          ports:
+            - containerPort: 8765
+              protocol: TCP
+          resources:
+            limits:
+              memory: "4Gi"
+              cpu: "4"
+            requests:
+              memory: "2Gi"
+              cpu: "2"
+          env:
+            - name: OMP_NUM_THREADS
+              value: "4"
+          volumeMounts:
+            - name: output-volume
+              mountPath: /mnt/outputs
+              readOnly: true
+          readinessProbe:
+            tcpSocket:
+              port: 8765
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 8765
+            initialDelaySeconds: 60
+            periodSeconds: 30
+      volumes:
+        - name: output-volume
+          persistentVolumeClaim:
+            claimName: ai-audio-outputs
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-audio-inference
+  namespace: default
+spec:
+  selector:
+    app: ai-audio-inference
+  ports:
+    - port: 8765
+      targetPort: 8765
+      protocol: TCP
+  type: ClusterIP

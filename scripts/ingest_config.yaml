@@ -1,0 +1,84 @@
+# Data ingestion configuration.
+#
+# For each dataset, set 'enabled: true' and fill in the source path
+# once you have downloaded/collected the data.
+#
+# Paths are relative to the project root unless absolute.
+
+datasets:
+  # ============================================================
+  # VOICE: Real + Fake
+  # ============================================================
+
+  asvspoof2019:
+    enabled: false
+    source_dir: "/path/to/ASVspoof2019_LA"   # <-- set this
+    output_dir: "data/raw/voice"
+    copy: false  # false = symlink (saves ~30GB disk)
+
+  asvspoof2021:
+    enabled: false
+    source_dir: "/path/to/ASVspoof2021_LA"   # <-- set this
+    output_dir: "data/raw/voice"
+    copy: false
+
+  asvspoof5:
+    enabled: false
+    source_dir: "/path/to/ASVspoof5"         # <-- set this
+    output_dir: "data/raw/voice"
+    copy: false
+
+  wavefake:
+    enabled: false
+    source_dir: "/path/to/WaveFake"          # <-- set this
+    output_dir: "data/raw/voice"
+    copy: false
+
+  fakeavceleb:
+    enabled: false
+    source_dir: "/path/to/FakeAVCeleb"       # <-- set this
+    output_dir: "data/raw/voice"
+
+  # ============================================================
+  # MUSIC: Real + Fake
+  # ============================================================
+
+  musiccaps:
+    enabled: false
+    csv_path: "/path/to/musiccaps-public.csv"  # <-- download from Google Research
+    output_dir: "data/raw/music/real/musiccaps"
+    max_clips: 0  # 0 = all (~5.5K clips)
+
+  ai_music_suno:
+    enabled: false
+    source_dir: "/path/to/collected/suno"    # <-- your collected Suno tracks
+    output_dir: "data/raw/music/fake"
+    copy: false
+
+  ai_music_udio:
+    enabled: false
+    source_dir: "/path/to/collected/udio"    # <-- your collected Udio tracks
+    output_dir: "data/raw/music/fake"
+    copy: false
+
+  # ============================================================
+  # NON-HUMAN SOUNDS: Real + Fake
+  # ============================================================
+
+  audioset:
+    enabled: false
+    segments_csv: "/path/to/balanced_train_segments.csv"  # <-- from AudioSet
+    output_dir: "data/raw/non_human/real/audioset"
+    max_clips: 5000
+
+  ai_sfx_elevenlabs:
+    enabled: false
+    source_dir: "/path/to/collected/elevenlabs_sfx"  # <-- your collected SFX
+    output_dir: "data/raw/non_human/fake"
+    copy: false
+
+  ai_sfx_bark:
+    enabled: false
+    source_dir: "/path/to/collected/bark_sfx"  # <-- your collected SFX
+    output_dir: "data/raw/non_human/fake"
+    copy: false

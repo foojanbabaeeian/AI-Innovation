@@ -1,0 +1,52 @@
+# Kubernetes Job for parallel data preprocessing.
+#
+# Runs the preprocessing pipeline with multiple worker processes
+# to normalize, resample, and segment all raw audio in parallel.
+# This is where K8s parallelism really helps -- preprocessing is
+# CPU-bound and embarrassingly parallel across files.
+#
+# Deploy:
+#   kubectl apply -f k8s/preprocessing-job.yaml
+#
+# Monitor:
+#   kubectl logs -f job/ai-audio-preprocessing
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ai-audio-preprocessing
+  namespace: default
+spec:
+  backoffLimit: 1
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: preprocessor
+          image: ai-audio-detection:latest
+          command:
+            - python
+            - -m
+            - src.data.preprocessing
+            - --raw_dir
+            - /mnt/data/raw
+            - --output_dir
+            - /mnt/data/processed
+            - --manifest_path
+            - /mnt/data/metadata/master_manifest.csv
+            - --num_workers
+            - "16"
+          resources:
+            limits:
+              memory: "16Gi"
+              cpu: "16"
+            requests:
+              memory: "8Gi"
+              cpu: "8"
+          volumeMounts:
+            - name: data-volume
+              mountPath: /mnt/data
+      volumes:
+        - name: data-volume
+          persistentVolumeClaim:
+            claimName: ai-audio-data
