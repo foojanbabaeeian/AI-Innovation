@@ -1,0 +1,45 @@
+# PersistentVolumeClaims for training data, outputs, and model cache.
+# Adjust storageClassName and size for your cluster.
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ai-audio-data
+  namespace: default
+spec:
+  accessModes:
+    - ReadOnlyMany    # Data is read-only during training
+  resources:
+    requests:
+      storage: 200Gi
+  storageClassName: standard
+
+---
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ai-audio-outputs
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteMany   # All workers write checkpoints
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: standard
+
+---
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: huggingface-cache
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: standard

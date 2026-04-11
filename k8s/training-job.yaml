@@ -1,0 +1,64 @@
+# Kubernetes Job for single-node CPU training.
+# Parallelism comes from multi-core data loading (num_workers=16),
+# PyTorch internal thread parallelism, and gradient accumulation.
+#
+# Prerequisites:
+#   1. PersistentVolumeClaims created (kubectl apply -f k8s/storage.yaml)
+#   2. Container image built and pushed
+#
+# Deploy:
+#   kubectl apply -f k8s/training-job.yaml
+#
+# Monitor:
+#   kubectl logs -f job/ai-audio-training
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ai-audio-training
+  namespace: default
+spec:
+  backoffLimit: 2
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: trainer
+          image: ai-audio-detection:latest
+          command:
+            - python
+            - -m
+            - src.training.train
+            - --config
+            - configs/k8s_multi_gpu.yaml
+          resources:
+            limits:
+              memory: "32Gi"
+              cpu: "16"
+            requests:
+              memory: "16Gi"
+              cpu: "8"
+          env:
+            - name: OMP_NUM_THREADS
+              value: "8"
+            - name: MKL_NUM_THREADS
+              value: "8"
+            - name: HF_HOME
+              value: "/root/.cache/huggingface"
+          volumeMounts:
+            - name: data-volume
+              mountPath: /mnt/data
+            - name: output-volume
+              mountPath: /mnt/outputs
+            - name: huggingface-cache
+              mountPath: /root/.cache/huggingface
+      volumes:
+        - name: data-volume
+          persistentVolumeClaim:
+            claimName: ai-audio-data
+        - name: output-volume
+          persistentVolumeClaim:
+            claimName: ai-audio-outputs
+        - name: huggingface-cache
+          persistentVolumeClaim:
+            claimName: huggingface-cache
