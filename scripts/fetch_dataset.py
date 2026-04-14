@@ -1,34 +1,34 @@
 """
 Standalone dataset fetcher — run multiple instances in parallel terminals.
 
-Usage (open 3 Anaconda Prompt windows, each with conda activate tf-gpu-210):
+Usage (open 3 Anaconda Prompt windows, each with: conda activate tf-gpu-210):
 
-  Terminal 1 — finish LJSpeech + ingest:
+  Terminal 1 — finish LJSpeech + ingest (real voice):
     python scripts/fetch_dataset.py ljspeech
 
-  Terminal 2 — download WaveFake melgan + ingest:
-    python scripts/fetch_dataset.py wavefake
+  Terminal 2 — generate SpeechT5 AI voice (GPU, ~45 min):
+    python scripts/fetch_dataset.py speecht5
 
-  Terminal 3 — generate AudioGen AI sounds (uses GPU):
+  Terminal 3 — generate AudioGen AI sounds (GPU, ~45 min):
     python scripts/fetch_dataset.py audiogen
 
   Terminal 4 — clone ESC-50 + ingest (if not done yet):
     python scripts/fetch_dataset.py esc50
 
-All output goes to data/raw/ which is linked to Google Drive.
+NOTE: speecht5 and audiogen both use the GPU — run them one at a time,
+      or run one in the notebook and one here.
 """
 
 import argparse
+import importlib.util
 import logging
 import os
 import sys
 import urllib.request
 import tarfile
-import zipfile
-import requests
+import subprocess
 from pathlib import Path
 
-# Add project root to path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 os.chdir(ROOT)
@@ -36,15 +36,20 @@ os.chdir(ROOT)
 DRIVE_ROOT = Path("C:/Users/fooja/Google Drive Streaming/My Drive/AI-Innovation-Data")
 RAW = DRIVE_ROOT / "raw"
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s  %(message)s",
-    datefmt="%H:%M:%S",
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(message)s", datefmt="%H:%M:%S")
 log = logging.getLogger(__name__)
 
 
-# ── LJSpeech ──────────────────────────────────────────────────────────────────
+def _load_ingestor(name):
+    """Load an ingestor module directly — bypasses src/data/__init__.py (which imports torch)."""
+    path = ROOT / "src" / "data" / "ingestors" / f"{name}.py"
+    spec = importlib.util.spec_from_file_location(name, path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+# ── LJSpeech ─────────────────────────────────────────────────────────────────
 
 def fetch_ljspeech():
     lj_dir = RAW / "voice" / "real" / "LJSpeech-1.1"
@@ -54,125 +59,121 @@ def fetch_ljspeech():
     existing = list(wavs_dir.glob("*.wav")) if wavs_dir.exists() else []
     log.info(f"LJSpeech: {len(existing)} wavs already present")
 
-    if len(existing) >= 13000:
-        log.info("LJSpeech already complete.")
-    else:
+    if not lj_dir.exists() or len(existing) < 13000:
+        if not lj_tar.exists():
+            log.info("Downloading LJSpeech (~2.6 GB)...")
+            lj_tar.parent.mkdir(parents=True, exist_ok=True)
+
+            def _progress(count, block, total):
+                pct = min(count * block / total * 100, 100)
+                print(f"\r  {pct:.1f}%", end="", flush=True)
+
+            urllib.request.urlretrieve(
+                "https://data.keithito.com/data/speech/LJSpeech-1.1.tar.bz2",
+                lj_tar, reporthook=_progress,
+            )
+            print()
+            log.info("Download complete.")
+
         if not lj_dir.exists():
-            if not lj_tar.exists():
-                log.info("Downloading LJSpeech (~2.6 GB)...")
-                lj_tar.parent.mkdir(parents=True, exist_ok=True)
-
-                def _progress(count, block, total):
-                    pct = min(count * block / total * 100, 100)
-                    print(f"\r  {pct:.1f}%", end="", flush=True)
-
-                urllib.request.urlretrieve(
-                    "https://data.keithito.com/data/speech/LJSpeech-1.1.tar.bz2",
-                    lj_tar,
-                    reporthook=_progress,
-                )
-                print()
-                log.info("Download complete.")
             log.info("Extracting LJSpeech...")
             with tarfile.open(lj_tar, "r:bz2") as tf:
                 tf.extractall(lj_dir.parent)
             log.info("Extracted.")
-        else:
-            log.info("LJSpeech folder exists, skipping download.")
 
     log.info("Ingesting LJSpeech...")
-    from src.data.ingestors.voice import ingest_ljspeech
-    n = ingest_ljspeech(
+    voice = _load_ingestor("voice")
+    n = voice.ingest_ljspeech(
         source_dir=str(lj_dir),
         output_dir=str(RAW / "voice"),
         copy=False,
     )
-    log.info(f"LJSpeech done: {n} files ingested → {RAW}/voice/real/ljspeech/")
+    log.info(f"LJSpeech done: {n} files → {RAW}/voice/real/ljspeech/")
 
 
-# ── WaveFake ──────────────────────────────────────────────────────────────────
+# ── SpeechT5 (AI voice, replaces WaveFake) ───────────────────────────────────
 
-def fetch_wavefake():
-    out_dir = RAW / "voice" / "fake" / "wavefake"
-    melgan_dir = out_dir / "ljspeech_melgan"
-    melgan_zip = out_dir / "ljspeech_melgan.zip"
+def fetch_speecht5():
+    """
+    Generate 1000 AI voice clips using Microsoft SpeechT5 TTS.
+    Uses LibriSpeech transcripts + 5 CMU Arctic speaker embeddings.
+    No large downloads — model weights are ~100 MB from HuggingFace.
+    """
+    import torch
+    out_dir = RAW / "voice" / "fake" / "speecht5"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    existing = list(melgan_dir.glob("*.wav")) if melgan_dir.exists() else []
-    if len(existing) >= 13000:
-        log.info(f"WaveFake melgan already complete: {len(existing)} files")
-    else:
-        if not melgan_zip.exists():
-            log.info("Querying Zenodo for WaveFake download URL...")
-            resp = requests.get("https://zenodo.org/api/records/5642694", timeout=30)
-            resp.raise_for_status()
-            files = resp.json().get("files", [])
+    existing = list(out_dir.glob("speecht5_*.wav"))
+    if len(existing) >= 1000:
+        log.info(f"SpeechT5 already complete: {len(existing)} files")
+        return
 
-            url = None
-            for f in files:
-                key = f["key"].lower()
-                if "melgan" in key and key.endswith(".zip") and "large" not in key and "multi" not in key:
-                    url = f["links"]["self"]
-                    size_gb = f.get("size", 0) / 1e9
-                    log.info(f"Found: {f['key']} ({size_gb:.1f} GB)")
-                    break
+    log.info(f"SpeechT5: {len(existing)}/1000 already done")
 
-            if not url:
-                log.error("Could not find melgan zip on Zenodo. Available files:")
-                for f in files:
-                    log.error(f"  {f['key']}  {f.get('size',0)/1e9:.1f} GB")
-                return
+    # Install datasets if needed
+    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "datasets"], check=True)
 
-            log.info(f"Downloading WaveFake melgan (~7 GB)...")
-            with requests.get(url, stream=True) as r:
-                r.raise_for_status()
-                total = int(r.headers.get("content-length", 0))
-                downloaded = 0
-                with open(melgan_zip, "wb") as fh:
-                    for chunk in r.iter_content(chunk_size=1024 * 1024):
-                        fh.write(chunk)
-                        downloaded += len(chunk)
-                        if total:
-                            pct = downloaded / total * 100
-                            print(f"\r  {pct:.1f}%  ({downloaded/1e9:.2f}/{total/1e9:.2f} GB)", end="", flush=True)
-            print()
-            log.info("Download complete.")
+    from transformers import SpeechT5Processor, SpeechT5ForTextToSpeech, SpeechT5HifiGan
+    from datasets import load_dataset
+    import torchaudio
 
-        log.info("Extracting WaveFake melgan...")
-        with zipfile.ZipFile(melgan_zip, "r") as zf:
-            zf.extractall(out_dir)
-        log.info("Extracted.")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    log.info(f"Using device: {device}")
 
-    log.info("Ingesting WaveFake melgan...")
-    from src.data.ingestors.voice import ingest_generic_audio
-    n = ingest_generic_audio(
-        source_dir=str(melgan_dir),
-        output_dir=str(RAW / "voice" / "fake" / "wavefake_melgan"),
-        label=1,
-        source_name="wavefake_melgan",
-        copy=False,
-    )
-    log.info(f"WaveFake done: {n} files ingested")
+    log.info("Loading SpeechT5 model...")
+    processor = SpeechT5Processor.from_pretrained("microsoft/speecht5_tts")
+    model = SpeechT5ForTextToSpeech.from_pretrained("microsoft/speecht5_tts").to(device)
+    vocoder = SpeechT5HifiGan.from_pretrained("microsoft/speecht5_hifigan").to(device)
+
+    log.info("Loading speaker embeddings (CMU Arctic)...")
+    embed_ds = load_dataset("Matthijs/cmu-arctic-xvectors", split="validation")
+    speaker_ids = [7306, 7307, 7308, 7309, 7310]
+    speakers = [
+        torch.tensor(embed_ds[sid]["xvector"]).unsqueeze(0).to(device)
+        for sid in speaker_ids
+    ]
+
+    log.info("Loading LibriSpeech texts...")
+    libri = load_dataset("librispeech_asr", "clean", split="test", trust_remote_code=True)
+    texts = [row["text"] for row in libri.select(range(min(1000, len(libri))))]
+
+    log.info(f"Generating {len(texts)} clips...")
+    start = len(existing)
+    for i, text in enumerate(texts):
+        out_path = out_dir / f"speecht5_{i:05d}.wav"
+        if out_path.exists():
+            continue
+        try:
+            spk = speakers[i % len(speakers)]
+            inputs = processor(text=text[:200], return_tensors="pt").to(device)
+            with torch.no_grad():
+                speech = model.generate_speech(inputs["input_ids"], spk, vocoder=vocoder)
+            torchaudio.save(str(out_path), speech.unsqueeze(0).cpu(), 16000)
+        except Exception as e:
+            log.warning(f"  Skipped clip {i}: {e}")
+
+        if (i + 1) % 50 == 0:
+            done = len(list(out_dir.glob("speecht5_*.wav")))
+            log.info(f"  {done}/1000 clips done")
+            if device == "cuda":
+                torch.cuda.empty_cache()
+
+    final = len(list(out_dir.glob("speecht5_*.wav")))
+    log.info(f"SpeechT5 done: {final} clips → {out_dir}")
 
 
-# ── AudioGen ──────────────────────────────────────────────────────────────────
+# ── AudioGen (AI non-human sounds) ───────────────────────────────────────────
 
 def fetch_audiogen():
     import torch
-    if not torch.cuda.is_available():
-        log.warning("No GPU found — AudioGen will be very slow on CPU.")
-    else:
-        log.info(f"GPU: {torch.cuda.get_device_name(0)}")
+    import torchaudio
 
     try:
-        import subprocess
+        from audiocraft.models import AudioGen
+    except ImportError:
+        log.info("Installing audiocraft...")
         subprocess.run([sys.executable, "-m", "pip", "install", "-q", "audiocraft"], check=True)
-    except Exception as e:
-        log.error(f"audiocraft install failed: {e}")
-        return
-
-    import torchaudio
-    from audiocraft.models import AudioGen
+        from audiocraft.models import AudioGen
 
     out_dir = RAW / "non_human" / "fake" / "audiogen"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -242,21 +243,20 @@ def fetch_audiogen():
         "midnight rain on rooftop", "sunrise bird chorus",
         "thunderstorm approaching", "storm passing with rain",
         "after rain bird sounds", "snow falling silently",
-    ]
-    PROMPTS = PROMPTS[:200]
+    ][:200]
 
     existing = list(out_dir.glob("audiogen_*.wav"))
     start_idx = len(existing)
-    log.info(f"AudioGen: {start_idx}/200 already generated")
+    log.info(f"AudioGen: {start_idx}/200 already done")
 
     if start_idx >= 200:
         log.info("AudioGen already complete.")
         return
 
-    log.info("Loading AudioGen model...")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    log.info(f"Loading AudioGen model on {device}...")
     model = AudioGen.get_pretrained("facebook/audiogen-medium")
     model.set_generation_params(duration=5)
-    log.info("Model loaded. Generating...")
 
     BATCH = 4
     for i in range(start_idx, len(PROMPTS), BATCH):
@@ -265,19 +265,18 @@ def fetch_audiogen():
             wavs = model.generate(batch)
         for j, wav in enumerate(wavs):
             idx = i + j
-            path = out_dir / f"audiogen_{idx:04d}.wav"
+            p = out_dir / f"audiogen_{idx:04d}.wav"
             wav_16k = torchaudio.functional.resample(wav.cpu(), model.sample_rate, 16000)
-            torchaudio.save(str(path), wav_16k, 16000)
+            torchaudio.save(str(p), wav_16k, 16000)
         done = min(i + BATCH, 200)
-        log.info(f"  {done}/200 clips generated")
+        log.info(f"  {done}/200 clips")
         if i % 40 == 0:
             torch.cuda.empty_cache()
 
-    final = len(list(out_dir.glob("audiogen_*.wav")))
-    log.info(f"AudioGen done: {final} clips saved → {out_dir}")
+    log.info(f"AudioGen done: {len(list(out_dir.glob('audiogen_*.wav')))} clips → {out_dir}")
 
 
-# ── ESC-50 ────────────────────────────────────────────────────────────────────
+# ── ESC-50 ───────────────────────────────────────────────────────────────────
 
 def fetch_esc50():
     esc50_dir = Path("C:/tmp/ESC-50")
@@ -285,7 +284,7 @@ def fetch_esc50():
 
     existing = list(out_dir.glob("*.wav")) if out_dir.exists() else []
     if len(existing) >= 1400:
-        log.info(f"ESC-50 already ingested: {len(existing)} files. Nothing to do.")
+        log.info(f"ESC-50 already complete: {len(existing)} files")
         return
 
     if not esc50_dir.exists():
@@ -298,23 +297,41 @@ def fetch_esc50():
         log.info("ESC-50 already cloned.")
 
     log.info("Ingesting ESC-50...")
-    from src.data.ingestors.audioset import ingest_esc50
-    n = ingest_esc50(str(esc50_dir), str(out_dir), copy=False, non_human_only=True)
-    log.info(f"ESC-50 done: {n} clips ingested")
+    audioset = _load_ingestor("audioset")
+    n = audioset.ingest_esc50(str(esc50_dir), str(out_dir), copy=False, non_human_only=True)
+    log.info(f"ESC-50 done: {n} clips → {out_dir}")
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+# ── Status check ─────────────────────────────────────────────────────────────
+
+def status():
+    checks = {
+        "voice/real/ljspeech":       (RAW / "voice" / "real" / "ljspeech",         13000, "*.wav"),
+        "voice/fake/speecht5":        (RAW / "voice" / "fake" / "speecht5",          1000, "speecht5_*.wav"),
+        "non_human/real/esc50":       (RAW / "non_human" / "real" / "esc50_processed", 1400, "*.wav"),
+        "non_human/fake/audiogen":    (RAW / "non_human" / "fake" / "audiogen",       200, "audiogen_*.wav"),
+    }
+    print("\n=== Data Status ===")
+    for name, (path, target, pattern) in checks.items():
+        n = len(list(path.glob(pattern))) if path.exists() else 0
+        bar = "#" * int(n / target * 20) + "-" * (20 - int(n / target * 20))
+        status = "DONE" if n >= target else f"{n}/{target}"
+        print(f"  [{bar}] {status:>12}  {name}")
+    print()
+
+
+# ── Main ─────────────────────────────────────────────────────────────────────
 
 COMMANDS = {
     "ljspeech": fetch_ljspeech,
-    "wavefake": fetch_wavefake,
-    "audiogen": fetch_audiogen,
-    "esc50": fetch_esc50,
+    "speecht5": fetch_speecht5,
+    "audiogen":  fetch_audiogen,
+    "esc50":     fetch_esc50,
+    "status":    status,
 }
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Fetch individual datasets in parallel terminals")
-    parser.add_argument("dataset", choices=list(COMMANDS.keys()),
-                        help="Which dataset to fetch")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("dataset", choices=list(COMMANDS.keys()))
     args = parser.parse_args()
     COMMANDS[args.dataset]()
