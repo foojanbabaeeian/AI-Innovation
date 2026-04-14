@@ -1,0 +1,59 @@
+# ── Local GPU training config (RTX 3070 / 8 GB VRAM) ──────────────────────────
+# Usage: python -m src.training.train --config configs/gpu_local.yaml
+#
+# Differs from default.yaml:
+#   - batch_size 64  (fits in 8 GB with mixed precision)
+#   - gradient_accumulation_steps 1  (no need to accumulate on real GPU)
+#   - num_workers 4  (reasonable for a laptop)
+#   - mixed_precision true  (fp16, saves ~40% VRAM)
+#   - early_stopping_patience 7  (slightly shorter for faster iteration)
+# ──────────────────────────────────────────────────────────────────────────────
+
+data:
+  manifest_path: "data/metadata/master_manifest.csv"
+  data_root: "data"
+  target_sr: 16000
+  segment_length: 64000  # 4 seconds @ 16kHz
+  batch_size: 64
+  num_workers: 4
+  augment_prob: 0.5
+  threshold_low: 0.2
+  threshold_high: 0.8
+
+audio:
+  sample_rate: 16000
+  duration_sec: 4.0
+
+augmentation:
+  enabled: true
+  probability: 0.5
+
+model:
+  embed_dim: 128
+  num_attention_heads: 4
+  num_attention_layers: 2
+  num_classes: 3
+  ssl_model_name: "microsoft/wavlm-base-plus"
+  freeze_ssl_feature_extractor: true
+  dropout: 0.1
+
+training:
+  epochs: 50
+  learning_rate: 0.0001
+  weight_decay: 0.0001
+  warmup_steps: 1000
+  loss_alpha: 0.5
+  grad_clip_norm: 1.0
+  early_stopping_patience: 7
+  scheduler: "cosine"
+  mixed_precision: true    # fp16 — saves ~40% VRAM on RTX 3070
+  gradient_accumulation_steps: 1
+
+logging:
+  output_dir: "outputs"
+  experiment_name: "ai_audio_detection"
+  log_every_n_steps: 50
+  eval_every_n_epochs: 1
+  save_top_k: 3
+  wandb_project: "ai-audio-detection"
+  wandb_enabled: false
