@@ -9,6 +9,16 @@ data:
   threshold_low: 0.2
   threshold_high: 0.8
 
+audio:
+  sample_rate: 16000
+  duration_sec: 4.0
+  # n_samples is auto-computed from sample_rate * duration_sec
+
+augmentation:
+  enabled: true
+  probability: 0.5
+  # codec settings for robustness training (requires ffmpeg)
+
 model:
   embed_dim: 128
   num_attention_heads: 4
@@ -26,9 +36,9 @@ training:
   loss_alpha: 0.5       # balance regression vs classification
   grad_clip_norm: 1.0
   early_stopping_patience: 10
-  scheduler: "cosine"
-  mixed_precision: false  # no GPU
-  gradient_accumulation_steps: 4  # simulate larger batch on CPU
+  scheduler: "cosine"   # cosine | step | plateau
+  mixed_precision: false
+  gradient_accumulation_steps: 4  # reduce to 1 on GPU
 
 logging:
   output_dir: "outputs"

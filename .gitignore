@@ -14,9 +14,13 @@ venv/
 .venv/
 env/
 
-# Data (too large for git)
+# Data (too large for git — raw audio and processed files)
 data/
 outputs/
+
+# Un-ignore source code inside src/data/ (Python modules, not audio data)
+!src/data/
+!src/data/**
 
 # OS
 .DS_Store
