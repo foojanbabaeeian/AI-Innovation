@@ -22,6 +22,11 @@ outputs/
 !src/data/
 !src/data/**
 
+# Un-ignore manifest CSVs so any team member can clone and train immediately
+!data/
+!data/metadata/
+!data/metadata/*.csv
+
 # OS
 .DS_Store
 Thumbs.db
