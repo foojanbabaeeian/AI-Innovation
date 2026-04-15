@@ -26,11 +26,21 @@ def _link_or_copy(src: Path, dst: Path, copy: bool) -> None:
         return
     if copy:
         shutil.copy2(src, dst)
-    else:
-        try:
-            os.symlink(src.resolve(), dst)
-        except (OSError, NotImplementedError):
-            shutil.copy2(src, dst)
+        return
+    # Try hard link first (no admin needed, works on same volume, Windows-safe)
+    try:
+        os.link(src.resolve(), dst)
+        return
+    except (OSError, NotImplementedError):
+        pass
+    # Try symlink (requires Developer Mode or admin on Windows)
+    try:
+        os.symlink(src.resolve(), dst)
+        return
+    except (OSError, NotImplementedError):
+        pass
+    # Last resort: copy
+    shutil.copy2(src, dst)
 
 
 def ingest_ljspeech(
