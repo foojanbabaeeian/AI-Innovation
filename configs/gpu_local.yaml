@@ -1,6 +1,16 @@
 # ── Local GPU training config (RTX 3070 / 8 GB VRAM) ──────────────────────────
 # Usage: python -m src.training.train --config configs/gpu_local.yaml
 #
+# SETUP FOR YOUR MACHINE:
+#   Set data_root to your Google Drive AI-Innovation-Data folder.
+#   The manifest uses paths relative to this root.
+#
+#   Windows (Google Drive Streaming):
+#     data_root: "C:/Users/YOUR_USERNAME/Google Drive Streaming/My Drive/AI-Innovation-Data"
+#
+#   Colab:
+#     data_root: "/content/drive/MyDrive/AI-Innovation-Data"
+#
 # Differs from default.yaml:
 #   - batch_size 64  (fits in 8 GB with mixed precision)
 #   - gradient_accumulation_steps 1  (no need to accumulate on real GPU)
@@ -11,7 +21,7 @@
 
 data:
   manifest_path: "data/metadata/master_manifest.csv"
-  data_root: "data"
+  data_root: "C:/Users/fooja/Google Drive Streaming/My Drive/AI-Innovation-Data"
   target_sr: 16000
   segment_length: 64000  # 4 seconds @ 16kHz
   batch_size: 64
