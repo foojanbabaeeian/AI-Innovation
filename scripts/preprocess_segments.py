@@ -185,6 +185,10 @@ def _process_row(args):
 def main():
     parser = argparse.ArgumentParser(description="Pre-segment audio for training")
     parser.add_argument("--manifest",        default="data/metadata/master_manifest.csv")
+    parser.add_argument("--data-root",       default=None,
+                        help="Root dir prepended to relative file_path entries in the manifest. "
+                             "Required when manifest uses relative paths. "
+                             "E.g.: 'C:/Users/you/Google Drive Streaming/My Drive/AI-Innovation-Data'")
     parser.add_argument("--processed-root",  required=True,
                         help="Root dir for output .wav segments")
     parser.add_argument("--out-manifest",    default="data/metadata/master_manifest_segmented.csv")
@@ -206,6 +210,14 @@ def main():
 
     with open(manifest_path, newline="", encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
+
+    # Prepend data_root to relative paths so workers can find files on disk
+    if args.data_root:
+        data_root = Path(args.data_root)
+        for row in rows:
+            fp = row["file_path"]
+            if not Path(fp).is_absolute():
+                row["file_path"] = str(data_root / fp)
 
     # Optional filters
     if args.split:
