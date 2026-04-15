@@ -30,11 +30,14 @@ class SSLBranch(nn.Module):
         super().__init__()
         self.embed_dim = embed_dim
 
-        # Load pretrained SSL model
+        # Load pretrained SSL model.
+        # use_safetensors=True avoids the torch.load CVE-2025-32434 restriction
+        # that blocks loading with torch < 2.6; all major HF models have safetensors.
+        load_kwargs = {"use_safetensors": True}
         if "wavlm" in model_name.lower():
-            self.ssl_model = WavLMModel.from_pretrained(model_name)
+            self.ssl_model = WavLMModel.from_pretrained(model_name, **load_kwargs)
         else:
-            self.ssl_model = Wav2Vec2Model.from_pretrained(model_name)
+            self.ssl_model = Wav2Vec2Model.from_pretrained(model_name, **load_kwargs)
 
         ssl_hidden_size = self.ssl_model.config.hidden_size  # typically 768
 

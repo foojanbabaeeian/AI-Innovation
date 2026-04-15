@@ -7,13 +7,7 @@ and for selecting the browser extension's operating point.
 
 import torch
 import numpy as np
-from sklearn.metrics import (
-    roc_auc_score,
-    average_precision_score,
-    confusion_matrix,
-    classification_report,
-    equal_error_rate as _eer_not_available,
-)
+from sklearn.metrics import roc_auc_score, average_precision_score
 
 
 def compute_eer(y_true: np.ndarray, y_scores: np.ndarray) -> tuple[float, float]:
