@@ -34,3 +34,5 @@ Thumbs.db
 *.pt
 *.onnx
 *.bin
+
+/Processed
