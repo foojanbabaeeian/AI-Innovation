@@ -20,6 +20,7 @@ NOTE: speecht5 and audiogen both use the GPU — run them one at a time,
 """
 
 import argparse
+import csv
 import importlib.util
 import logging
 import os
@@ -35,9 +36,27 @@ os.chdir(ROOT)
 
 DRIVE_ROOT = Path("C:/Users/fooja/Google Drive Streaming/My Drive/AI-Innovation-Data")
 RAW = DRIVE_ROOT / "raw"
+MANIFEST = ROOT / "data" / "metadata" / "master_manifest.csv"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(message)s", datefmt="%H:%M:%S")
 log = logging.getLogger(__name__)
+
+
+def _load_manifest():
+    if not MANIFEST.exists():
+        return [], set()
+    with open(MANIFEST, newline="", encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    return rows, {r["sample_id"] for r in rows}
+
+
+def _save_manifest(rows):
+    MANIFEST.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = ["sample_id", "file_path", "label", "domain", "source_dataset", "generator", "split"]
+    with open(MANIFEST, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
 
 
 def _load_ingestor(name):
@@ -81,14 +100,30 @@ def fetch_ljspeech():
                 tf.extractall(lj_dir.parent)
             log.info("Extracted.")
 
-    log.info("Ingesting LJSpeech...")
-    voice = _load_ingestor("voice")
-    n = voice.ingest_ljspeech(
-        source_dir=str(lj_dir),
-        output_dir=str(RAW / "voice"),
-        copy=False,
-    )
-    log.info(f"LJSpeech done: {n} files → {RAW}/voice/real/ljspeech/")
+    # Register in manifest directly — no file copying (avoids filling Drive cache)
+    existing_rows, existing_ids = _load_manifest()
+    new_rows = []
+    wavs = sorted(wavs_dir.glob("*.wav"))
+    for wav in wavs:
+        sample_id = f"ljspeech_{wav.stem}"
+        if sample_id in existing_ids:
+            continue
+        new_rows.append({
+            "sample_id":      sample_id,
+            "file_path":      str(wav).replace("\\", "/"),
+            "label":          0.0,
+            "domain":         "voice",
+            "source_dataset": "ljspeech",
+            "generator":      "human",
+            "split":          "train",
+        })
+
+    if not new_rows:
+        log.info(f"LJSpeech already in manifest ({len(wavs)} files). Nothing to add.")
+        return
+
+    _save_manifest(existing_rows + new_rows)
+    log.info(f"LJSpeech done: registered {len(new_rows)} files in manifest (no copy)")
 
 
 # ── SpeechT5 (AI voice, replaces WaveFake) ───────────────────────────────────
@@ -158,8 +193,30 @@ def fetch_speecht5():
             if device == "cuda":
                 torch.cuda.empty_cache()
 
-    final = len(list(out_dir.glob("speecht5_*.wav")))
-    log.info(f"SpeechT5 done: {final} clips → {out_dir}")
+    final = list(out_dir.glob("speecht5_*.wav"))
+    log.info(f"SpeechT5 generation done: {len(final)} clips")
+
+    # Register in manifest
+    existing_rows, existing_ids = _load_manifest()
+    new_rows = []
+    for wav in sorted(final):
+        sample_id = f"speecht5_{wav.stem}"
+        if sample_id in existing_ids:
+            continue
+        new_rows.append({
+            "sample_id":      sample_id,
+            "file_path":      str(wav).replace("\\", "/"),
+            "label":          1.0,
+            "domain":         "voice",
+            "source_dataset": "speecht5",
+            "generator":      "speecht5",
+            "split":          "train",
+        })
+    if new_rows:
+        _save_manifest(existing_rows + new_rows)
+        log.info(f"SpeechT5: registered {len(new_rows)} files in manifest")
+    else:
+        log.info("SpeechT5 already fully registered in manifest.")
 
 
 # ── AudioGen (AI non-human sounds) ───────────────────────────────────────────
@@ -167,12 +224,19 @@ def fetch_speecht5():
 def fetch_audiogen():
     import torch
     import torchaudio
+    import numpy as np
+    # numpy 2.x removed bool8/complex256/float128 — patch for audiocraft's tensorboard dep
+    if not hasattr(np, 'bool8'):
+        np.bool8 = np.bool_
 
     try:
         from audiocraft.models import AudioGen
     except ImportError:
         log.info("Installing audiocraft...")
         subprocess.run([sys.executable, "-m", "pip", "install", "-q", "audiocraft"], check=True)
+        import numpy as np
+        if not hasattr(np, 'bool8'):
+            np.bool8 = np.bool_
         from audiocraft.models import AudioGen
 
     out_dir = RAW / "non_human" / "fake" / "audiogen"
@@ -273,33 +337,86 @@ def fetch_audiogen():
         if i % 40 == 0:
             torch.cuda.empty_cache()
 
-    log.info(f"AudioGen done: {len(list(out_dir.glob('audiogen_*.wav')))} clips → {out_dir}")
+    final = list(out_dir.glob("audiogen_*.wav"))
+    log.info(f"AudioGen generation done: {len(final)} clips")
+
+    # Register in manifest
+    existing_rows, existing_ids = _load_manifest()
+    new_rows = []
+    for wav in sorted(final):
+        sample_id = f"audiogen_{wav.stem}"
+        if sample_id in existing_ids:
+            continue
+        new_rows.append({
+            "sample_id":      sample_id,
+            "file_path":      str(wav).replace("\\", "/"),
+            "label":          1.0,
+            "domain":         "non_human",
+            "source_dataset": "audiogen",
+            "generator":      "audiogen",
+            "split":          "train",
+        })
+    if new_rows:
+        _save_manifest(existing_rows + new_rows)
+        log.info(f"AudioGen: registered {len(new_rows)} files in manifest")
+    else:
+        log.info("AudioGen already fully registered in manifest.")
 
 
 # ── ESC-50 ───────────────────────────────────────────────────────────────────
 
 def fetch_esc50():
-    esc50_dir = Path("C:/tmp/ESC-50")
+    # Clone to Drive so it doesn't fill C: — it's ~600 MB of audio
+    esc50_dir = RAW / "non_human" / "real" / "ESC-50"
     out_dir = RAW / "non_human" / "real" / "esc50_processed"
 
-    existing = list(out_dir.glob("*.wav")) if out_dir.exists() else []
-    if len(existing) >= 1400:
-        log.info(f"ESC-50 already complete: {len(existing)} files")
+    # Check manifest first
+    existing_rows, existing_ids = _load_manifest()
+    esc50_in_manifest = sum(1 for r in existing_rows if r.get("source_dataset") == "esc50")
+    if esc50_in_manifest >= 1400:
+        log.info(f"ESC-50 already in manifest: {esc50_in_manifest} entries. Nothing to do.")
         return
 
-    if not esc50_dir.exists():
-        log.info("Installing git-lfs and cloning ESC-50...")
-        os.system("git lfs install")
-        ret = os.system(f"git lfs clone https://github.com/karolpiczak/ESC-50.git {esc50_dir}")
-        if ret != 0:
-            raise RuntimeError("ESC-50 clone failed.")
-    else:
-        log.info("ESC-50 already cloned.")
+    existing = list(out_dir.glob("*.wav")) if out_dir.exists() else []
+    if len(existing) < 1400:
+        if not esc50_dir.exists():
+            log.info("Installing git-lfs and cloning ESC-50 to Drive...")
+            os.system("git lfs install")
+            esc50_dir.parent.mkdir(parents=True, exist_ok=True)
+            ret = os.system(f'git lfs clone https://github.com/karolpiczak/ESC-50.git "{esc50_dir}"')
+            if ret != 0:
+                raise RuntimeError("ESC-50 clone failed.")
+        else:
+            log.info("ESC-50 already cloned.")
 
-    log.info("Ingesting ESC-50...")
-    audioset = _load_ingestor("audioset")
-    n = audioset.ingest_esc50(str(esc50_dir), str(out_dir), copy=False, non_human_only=True)
-    log.info(f"ESC-50 done: {n} clips → {out_dir}")
+        log.info("Ingesting ESC-50...")
+        audioset = _load_ingestor("audioset")
+        n = audioset.ingest_esc50(str(esc50_dir), str(out_dir), copy=True, non_human_only=True)
+        log.info(f"ESC-50 ingest done: {n} clips -> {out_dir}")
+        existing = list(out_dir.glob("*.wav"))
+
+    # Register in manifest
+    new_rows = []
+    for wav in sorted(existing):
+        sample_id = f"esc50_{wav.stem}"
+        if sample_id in existing_ids:
+            continue
+        new_rows.append({
+            "sample_id":      sample_id,
+            "file_path":      str(wav).replace("\\", "/"),
+            "label":          0.0,
+            "domain":         "non_human",
+            "source_dataset": "esc50",
+            "generator":      "real",
+            "split":          "train",
+        })
+
+    if not new_rows:
+        log.info("ESC-50 already fully registered in manifest.")
+        return
+
+    _save_manifest(existing_rows + new_rows)
+    log.info(f"ESC-50 done: registered {len(new_rows)} files in manifest")
 
 
 # ── Status check ─────────────────────────────────────────────────────────────
