@@ -10,6 +10,7 @@ Supports:
 - MPS (Apple Silicon) or CUDA if available, otherwise CPU
 """
 
+import csv
 import time
 from pathlib import Path
 
@@ -87,6 +88,7 @@ class Trainer:
         # Output
         self.output_dir = Path(config.logging.output_dir) / config.logging.experiment_name
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.metrics_csv_path = self.output_dir / "metrics.csv"
 
     def _setup_device(self) -> torch.device:
         if torch.cuda.is_available():
@@ -164,10 +166,23 @@ class Trainer:
         all_class_logits = []
         all_ai_ratios = []
         all_class_labels = []
+        val_losses = {"total": [], "regression": [], "classification": []}
 
         for batch in self.val_loader:
             waveform = batch["waveform"].to(self.device)
+            ai_ratio = batch["ai_ratio"].to(self.device)
+            class_label = batch["class_label"].to(self.device)
+
             outputs = self.model(waveform)
+            losses = self.criterion(
+                outputs["regression_score"],
+                outputs["class_logits"],
+                ai_ratio,
+                class_label,
+            )
+            val_losses["total"].append(losses["total_loss"].item())
+            val_losses["regression"].append(losses["regression_loss"].item())
+            val_losses["classification"].append(losses["classification_loss"].item())
 
             all_reg_scores.append(outputs["regression_score"].cpu().numpy())
             all_class_logits.append(outputs["class_logits"].cpu().numpy())
@@ -180,6 +195,9 @@ class Trainer:
         class_labels = np.concatenate(all_class_labels)
 
         metrics = compute_metrics(reg_scores, class_logits, ai_ratios, class_labels)
+        metrics["val_loss/total"] = float(np.mean(val_losses["total"]))
+        metrics["val_loss/regression"] = float(np.mean(val_losses["regression"]))
+        metrics["val_loss/classification"] = float(np.mean(val_losses["classification"]))
         return metrics
 
     def save_checkpoint(self, tag: str = "latest"):
@@ -192,9 +210,17 @@ class Trainer:
             "best_eer": self.best_eer,
             "config": self.config,
         }
-        path = self.output_dir / f"checkpoint_{tag}.pt"
+        path = self.output_dir / f"checkpoint_{tag}.pth"
         torch.save(checkpoint, path)
         print(f"Checkpoint saved: {path}")
+
+    def _append_metrics_row(self, row: dict):
+        write_header = not self.metrics_csv_path.exists()
+        with open(self.metrics_csv_path, "a", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=list(row.keys()))
+            if write_header:
+                writer.writeheader()
+            writer.writerow(row)
 
     def load_checkpoint(self, path: str):
         checkpoint = torch.load(path, map_location=self.device, weights_only=False)
@@ -229,25 +255,56 @@ class Trainer:
                 val_metrics = self.evaluate()
                 elapsed = time.time() - t0
 
-                print(f"\nEpoch {epoch} ({elapsed:.1f}s)")
-                print(f"  Train loss: {train_losses['total']:.4f} "
-                      f"(reg: {train_losses['regression']:.4f}, "
-                      f"cls: {train_losses['classification']:.4f})")
-                print(format_metrics_table(val_metrics))
+                val_loss = val_metrics.get("val_loss/total", float("nan"))
+                val_acc = val_metrics.get("classification/accuracy", float("nan"))
+                eer = val_metrics.get("binary/eer", float("inf"))
 
                 # Check EER for early stopping and best model
-                eer = val_metrics.get("binary/eer", float("inf"))
-                if eer < self.best_eer:
+                is_best = eer < self.best_eer
+                if is_best:
                     self.best_eer = eer
                     self.patience_counter = 0
-                    self.save_checkpoint("best")
                 else:
                     self.patience_counter += 1
 
+                patience_limit = self.config.training.early_stopping_patience
+                best_marker = "  [best]" if is_best else ""
+                print(
+                    f"\nEpoch {epoch:>3} ({elapsed:>5.1f}s) | "
+                    f"Train Loss: {train_losses['total']:.4f} | "
+                    f"Val Loss: {val_loss:.4f} | "
+                    f"Val Acc: {val_acc:.4f} | "
+                    f"Val EER: {eer:.4f} | "
+                    f"Patience: {self.patience_counter}/{patience_limit}"
+                    f"{best_marker}"
+                )
+                print(format_metrics_table(val_metrics))
+
+                # Append per-epoch row to metrics.csv
+                self._append_metrics_row({
+                    "epoch": epoch,
+                    "elapsed_sec": round(elapsed, 2),
+                    "train_loss_total": round(train_losses["total"], 6),
+                    "train_loss_regression": round(train_losses["regression"], 6),
+                    "train_loss_classification": round(train_losses["classification"], 6),
+                    "val_loss_total": round(val_metrics.get("val_loss/total", float("nan")), 6),
+                    "val_loss_regression": round(val_metrics.get("val_loss/regression", float("nan")), 6),
+                    "val_loss_classification": round(val_metrics.get("val_loss/classification", float("nan")), 6),
+                    "val_accuracy": round(val_acc, 6),
+                    "val_eer": round(eer, 6) if eer != float("inf") else "",
+                    "val_auc_roc": round(val_metrics.get("binary/auc_roc", float("nan")), 6),
+                    "val_mae": round(val_metrics.get("regression/mae", float("nan")), 6),
+                    "patience_counter": self.patience_counter,
+                    "is_best": int(is_best),
+                    "lr": self.optimizer.param_groups[0]["lr"],
+                })
+
+                if is_best:
+                    self.save_checkpoint("best")
                 self.save_checkpoint("latest")
 
-                if self.patience_counter >= self.config.training.early_stopping_patience:
-                    print(f"Early stopping at epoch {epoch} (EER: {self.best_eer:.4f})")
+                if self.patience_counter >= patience_limit:
+                    print(f"\nEarly stopping at epoch {epoch} (best EER: {self.best_eer:.4f})")
                     break
 
                 if self.config.training.scheduler == "plateau":

@@ -12,7 +12,6 @@ from sklearn.metrics import (
     average_precision_score,
     confusion_matrix,
     classification_report,
-    equal_error_rate as _eer_not_available,
 )
 
 
