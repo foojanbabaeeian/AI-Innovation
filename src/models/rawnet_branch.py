@@ -62,27 +62,32 @@ class SincConv(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        low = self.min_low_hz + torch.abs(self.low_hz_)
-        high = torch.clamp(
-            low + self.min_band_hz + torch.abs(self.band_hz_),
-            max=self.sample_rate / 2,
-        )
+        # Sinc filter construction is numerically sensitive — force fp32
+        # even when autocast (fp16) is active.
+        with torch.amp.autocast(device_type="cuda", enabled=False):
+            x = x.float()
 
-        # Sinc filters
-        f_low = torch.sin(high * self.n_) / (self.n_ / 2 + 1e-8) * self.window
-        f_high = torch.sin(low * self.n_) / (self.n_ / 2 + 1e-8) * self.window
-        band_pass_left = (f_low - f_high) / (2 * self.sample_rate)
+            low = self.min_low_hz + torch.abs(self.low_hz_)
+            high = torch.clamp(
+                low + self.min_band_hz + torch.abs(self.band_hz_),
+                max=self.sample_rate / 2,
+            )
 
-        # Symmetric filter
-        band_pass_center = (high - low) / self.sample_rate
-        band_pass = torch.cat(
-            [band_pass_left, band_pass_center.unsqueeze(1), band_pass_left.flip(dims=[1])],
-            dim=1,
-        )
-        band_pass = band_pass / (band_pass.abs().sum(dim=1, keepdim=True) + 1e-8)
+            # Sinc filters
+            f_low = torch.sin(high * self.n_) / (self.n_ / 2 + 1e-8) * self.window
+            f_high = torch.sin(low * self.n_) / (self.n_ / 2 + 1e-8) * self.window
+            band_pass_left = (f_low - f_high) / (2 * self.sample_rate)
 
-        filters = band_pass.unsqueeze(1)  # (out_channels, 1, kernel_size)
-        return F.conv1d(x, filters, stride=1, padding=self.kernel_size // 2)
+            # Symmetric filter
+            band_pass_center = (high - low) / self.sample_rate
+            band_pass = torch.cat(
+                [band_pass_left, band_pass_center, band_pass_left.flip(dims=[1])],
+                dim=1,
+            )
+            band_pass = band_pass / (band_pass.abs().sum(dim=1, keepdim=True) + 1e-8)
+
+            filters = band_pass.unsqueeze(1)  # (out_channels, 1, kernel_size)
+            return F.conv1d(x, filters, stride=1, padding=self.kernel_size // 2)
 
 
 class ResBlock1D(nn.Module):

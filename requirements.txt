@@ -6,13 +6,13 @@
 # The --extra-index-url below pulls CUDA-enabled torch/torchaudio from
 # NVIDIA's wheel server. PyPI is still used for everything else.
 # If pip ever picks the CPU wheel anyway, force it:
-#   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121 --force-reinstall
+#   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu124 --force-reinstall
 
---extra-index-url https://download.pytorch.org/whl/cu121
+--extra-index-url https://download.pytorch.org/whl/cu124
 
 # ── Core ML (CUDA build) ─────────────────────────────────────────────────────
-torch>=2.2.0
-torchaudio>=2.2.0
+torch>=2.6.0
+torchaudio>=2.6.0
 
 # ── Pretrained WavLM backbone ────────────────────────────────────────────────
 transformers>=4.40.0

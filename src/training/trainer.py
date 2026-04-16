@@ -67,6 +67,13 @@ class Trainer:
         # Scheduler
         self.scheduler = self._build_scheduler()
 
+        # Mixed precision. Use bf16 on Ampere+ (no overflow, no GradScaler needed).
+        # Falls back to fp16 + GradScaler on older GPUs.
+        self.use_amp = bool(getattr(config.training, "mixed_precision", False)) and self.device.type == "cuda"
+        self.amp_dtype = torch.bfloat16 if (self.use_amp and torch.cuda.is_bf16_supported()) else torch.float16
+        # GradScaler is only needed for fp16; bf16 doesn't underflow.
+        self.scaler = torch.amp.GradScaler("cuda", enabled=self.use_amp and self.amp_dtype == torch.float16)
+
         # Data -- parallel loading via num_workers
         self.train_loader = build_dataloader(
             config.data.manifest_path, config.data.data_root, "train",
@@ -124,21 +131,26 @@ class Trainer:
             ai_ratio = batch["ai_ratio"].to(self.device)
             class_label = batch["class_label"].to(self.device)
 
-            outputs = self.model(waveform)
-            losses = self.criterion(
-                outputs["regression_score"],
-                outputs["class_logits"],
-                ai_ratio,
-                class_label,
-            )
-            loss = losses["total_loss"] / accum_steps
-            loss.backward()
+            with torch.amp.autocast(device_type=self.device.type, enabled=self.use_amp, dtype=self.amp_dtype):
+                outputs = self.model(waveform)
+                losses = self.criterion(
+                    outputs["regression_score"],
+                    outputs["class_logits"],
+                    ai_ratio,
+                    class_label,
+                )
+                loss = losses["total_loss"] / accum_steps
+
+            # Scaler is a no-op for bf16 (enabled=False at construction time).
+            self.scaler.scale(loss).backward()
 
             if (step + 1) % accum_steps == 0:
+                self.scaler.unscale_(self.optimizer)
                 nn.utils.clip_grad_norm_(
                     self.model.parameters(), self.config.training.grad_clip_norm
                 )
-                self.optimizer.step()
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
                 self.optimizer.zero_grad()
 
                 if self.config.training.scheduler == "cosine":
@@ -173,19 +185,20 @@ class Trainer:
             ai_ratio = batch["ai_ratio"].to(self.device)
             class_label = batch["class_label"].to(self.device)
 
-            outputs = self.model(waveform)
-            losses = self.criterion(
-                outputs["regression_score"],
-                outputs["class_logits"],
-                ai_ratio,
-                class_label,
-            )
+            with torch.amp.autocast(device_type=self.device.type, enabled=self.use_amp, dtype=self.amp_dtype):
+                outputs = self.model(waveform)
+                losses = self.criterion(
+                    outputs["regression_score"],
+                    outputs["class_logits"],
+                    ai_ratio,
+                    class_label,
+                )
             val_losses["total"].append(losses["total_loss"].item())
             val_losses["regression"].append(losses["regression_loss"].item())
             val_losses["classification"].append(losses["classification_loss"].item())
 
-            all_reg_scores.append(outputs["regression_score"].cpu().numpy())
-            all_class_logits.append(outputs["class_logits"].cpu().numpy())
+            all_reg_scores.append(outputs["regression_score"].float().cpu().numpy())
+            all_class_logits.append(outputs["class_logits"].float().cpu().numpy())
             all_ai_ratios.append(batch["ai_ratio"].numpy())
             all_class_labels.append(batch["class_label"].numpy())
 
@@ -207,6 +220,7 @@ class Trainer:
             "model_state_dict": self.model.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
             "scheduler_state_dict": self.scheduler.state_dict(),
+            "scaler_state_dict": self.scaler.state_dict(),
             "best_eer": self.best_eer,
             "config": self.config,
         }
@@ -227,6 +241,8 @@ class Trainer:
         self.model.load_state_dict(checkpoint["model_state_dict"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+        if "scaler_state_dict" in checkpoint and self.use_amp:
+            self.scaler.load_state_dict(checkpoint["scaler_state_dict"])
         self.current_epoch = checkpoint["epoch"] + 1
         self.global_step = checkpoint["global_step"]
         self.best_eer = checkpoint["best_eer"]
@@ -235,6 +251,8 @@ class Trainer:
     def fit(self):
         """Main training loop."""
         print(f"Training on: {self.device}")
+        amp_label = str(self.amp_dtype).replace("torch.", "") if self.use_amp else "off"
+        print(f"Mixed precision: {amp_label}")
         print(f"Train samples: {len(self.train_loader.dataset)}")
         print(f"Val samples: {len(self.val_loader.dataset)}")
         print(f"DataLoader workers: {self.config.data.num_workers}")

@@ -62,7 +62,10 @@ class SSLBranch(nn.Module):
         # waveform: (batch, 1, num_samples)
         x = waveform.squeeze(1)  # (batch, num_samples) -- SSL models expect 1D input
 
-        outputs = self.ssl_model(x, output_hidden_states=True)
+        # WavLM's internal attention can overflow fp16; run in fp32
+        # (it's frozen so this costs no extra gradient memory).
+        with torch.amp.autocast(device_type="cuda", enabled=False):
+            outputs = self.ssl_model(x.float(), output_hidden_states=True)
         hidden_states = outputs.hidden_states  # tuple of (batch, time, 768)
 
         # Weighted sum across all transformer layers
