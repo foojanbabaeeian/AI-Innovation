@@ -1,22 +1,24 @@
 """
-Generate AI non-human sound clips with Meta's AudioGen (via audiocraft).
+Generate AI non-human sound clips with AudioLDM2 (via diffusers).
 
-Designed to run on Colab with a T4 / A100 GPU. ~1,000 clips in ~1-2 hours on T4.
+AudioLDM2 is a reliable, well-supported text-to-audio model for environmental
+sounds / sound effects. We use it instead of Meta's AudioGen because AudioGen
+is only distributed through `audiocraft`, which builds flakily on Colab.
 
-Prereqs on Colab:
-    !pip install -q audiocraft soundfile
+Prereqs on Colab (if not already installed):
+    !pip install -q diffusers accelerate scipy soundfile
 
 Usage:
     python scripts/generate_audiogen.py \\
-        --out-dir   /content/drive/MyDrive/AI-Innovation-Data/raw/non_human/fake/audiogen_v2 \\
+        --out-dir   /content/drive/MyDrive/AI-Innovation-Data/raw/non_human/fake/audioldm2 \\
         --n-clips   1000 \\
         --duration  5 \\
-        --model     facebook/audiogen-medium
+        --model     cvssp/audioldm2
 
 Notes:
-  - Prompts cover ESC-50 style environmental sound categories so the fake set
-    covers the same distribution as our real (ESC-50) data.
-  - AudioGen-medium (1.5B) is the only public size; runs fine on a T4.
+  - AudioLDM2 natively outputs 16 kHz. preprocess_segments.py will resample if
+    needed for the non_human domain (44.1 kHz target).
+  - Prompts cover ESC-50 style environmental sound categories.
   - Resumable: skips clips that already exist in out_dir.
 """
 
@@ -84,33 +86,43 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--out-dir",   required=True)
     p.add_argument("--n-clips",   type=int, default=1000)
-    p.add_argument("--duration",  type=float, default=5.0)
-    p.add_argument("--model",     default="facebook/audiogen-medium")
+    p.add_argument("--duration",  type=float, default=5.0, help="Seconds per clip")
+    p.add_argument("--model",     default="cvssp/audioldm2")
     p.add_argument("--batch-size", type=int, default=4)
+    p.add_argument("--num-inference-steps", type=int, default=50,
+                   help="AudioLDM2 denoise steps. 50 = good quality; 25 = faster")
+    p.add_argument("--guidance-scale", type=float, default=3.5)
     p.add_argument("--seed",      type=int, default=42)
     args = p.parse_args()
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    import numpy as np
+    import scipy.io.wavfile
     import torch
-    from audiocraft.models import AudioGen
-    from audiocraft.data.audio import audio_write
+    from diffusers import AudioLDM2Pipeline
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    log.info("Device: %s", device)
+    dtype  = torch.float16 if device == "cuda" else torch.float32
+    log.info("Device: %s  dtype: %s", device, dtype)
     log.info("Loading %s ...", args.model)
-    model = AudioGen.get_pretrained(args.model, device=device)
-    model.set_generation_params(duration=args.duration)
+    pipe = AudioLDM2Pipeline.from_pretrained(args.model, torch_dtype=dtype).to(device)
+    # disable the NSFW-style safety checker that exists for AudioLDM2 — it flags legit SFX
+    if hasattr(pipe, "safety_checker"):
+        pipe.safety_checker = None
+
+    generator = torch.Generator(device=device).manual_seed(args.seed)
 
     prompts = build_prompts(args.n_clips, seed=args.seed)
     log.info("Generating %d clips at %ss each", len(prompts), args.duration)
+    sr = 16_000  # AudioLDM2 native output
 
     done = 0
     skipped = 0
     for batch_start in range(0, len(prompts), args.batch_size):
         batch_prompts = prompts[batch_start : batch_start + args.batch_size]
-        batch_ids = [f"audiogen_v2_{batch_start + i:05d}" for i in range(len(batch_prompts))]
+        batch_ids = [f"audioldm2_{batch_start + i:05d}" for i in range(len(batch_prompts))]
 
         pending_prompts, pending_ids = [], []
         for pid, prom in zip(batch_ids, batch_prompts):
@@ -124,16 +136,20 @@ def main():
             continue
 
         with torch.no_grad():
-            wav_batch = model.generate(pending_prompts, progress=False)
-
-        for pid, wav in zip(pending_ids, wav_batch):
-            audio_write(
-                str(out_dir / pid),
-                wav.cpu(),
-                model.sample_rate,
-                strategy="loudness",
-                loudness_compressor=True,
+            result = pipe(
+                pending_prompts,
+                num_inference_steps=args.num_inference_steps,
+                audio_length_in_s=args.duration,
+                guidance_scale=args.guidance_scale,
+                generator=generator,
             )
+        audios = result.audios  # shape (batch, n_samples) or list of arrays
+
+        for pid, audio in zip(pending_ids, audios):
+            audio = np.asarray(audio).squeeze()
+            audio = np.clip(audio, -1.0, 1.0)
+            audio_i16 = (audio * 32767).astype(np.int16)
+            scipy.io.wavfile.write(str(out_dir / f"{pid}.wav"), sr, audio_i16)
             done += 1
 
         if (batch_start // args.batch_size) % 25 == 0:
@@ -145,7 +161,7 @@ def main():
 
     log.info("Done: generated=%d  skipped=%d  out=%s", done, skipped, out_dir)
     log.info("Next: python scripts/register_generated.py \\\n"
-             "        --dir %s --domain non_human --generator audiogen_v2 --source audiogen_v2",
+             "        --dir %s --domain non_human --generator audioldm2 --source audioldm2",
              out_dir)
 
 

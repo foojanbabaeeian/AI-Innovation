@@ -1,10 +1,12 @@
 """
-Generate AI music clips with Meta's MusicGen (via audiocraft) for the MUSIC/fake domain.
+Generate AI music clips with Meta's MusicGen, via HuggingFace transformers.
 
-Designed to run on Colab with a T4 / A100 GPU. ~2,000 clips in ~2-3 hours on T4.
+Uses `transformers.pipeline("text-to-audio", ...)` instead of the `audiocraft`
+package because audiocraft's build often fails on Colab due to xformers/torch
+version mismatches. transformers is pre-installed and always works.
 
-Prereqs on Colab:
-    !pip install -q audiocraft soundfile
+Prereqs on Colab (if not already installed):
+    !pip install -q transformers scipy soundfile
 
 Usage:
     python scripts/generate_musicgen.py \\
@@ -14,10 +16,9 @@ Usage:
         --model     facebook/musicgen-small
 
 Notes:
-  - We use `musicgen-small` by default (300M params) — ~5-10 s/clip on T4.
-    `musicgen-medium` (1.5B) gives better quality but is 3x slower.
-  - Prompts cover a diverse set of genres/moods/instruments to mirror the
-    real-music distribution (MusicCaps is multi-genre, multi-era).
+  - MusicGen generates at 32 kHz. We save as-is (32 kHz WAV); preprocess_segments.py
+    will resample to the target domain rate (44.1 kHz for music) automatically.
+  - ~50 audio tokens = 1 second. So --duration 10 -> max_new_tokens=500.
   - Resumable: skips clips that already exist in out_dir.
 """
 
@@ -34,7 +35,7 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 # ── Prompt pool: genre × mood × instrument × descriptor ──────────────────────
-# 8 × 8 × 8 × 4 = 2,048 unique combinations — matches our 2,000-clip target.
+# 8 × 8 × 8 × 4 = 2,048 unique combinations
 GENRES = [
     "pop", "rock", "jazz", "classical", "hip hop", "electronic", "folk", "country"
 ]
@@ -55,7 +56,6 @@ DESCRIPTORS = [
 
 
 def build_prompts(n: int, seed: int = 42) -> list[str]:
-    """Deterministically sample n unique prompts from the cartesian product."""
     rng = random.Random(seed)
     all_combos = [
         f"A {g} track, {m}, {i}, {d}."
@@ -63,7 +63,6 @@ def build_prompts(n: int, seed: int = 42) -> list[str]:
     ]
     rng.shuffle(all_combos)
     if n > len(all_combos):
-        # repeat the pool — rare, only if user asks for > 2,048
         all_combos = (all_combos * ((n // len(all_combos)) + 1))[:n]
     return all_combos[:n]
 
@@ -83,19 +82,32 @@ def main():
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Lazy import so `--help` works without the heavy deps.
+    import numpy as np
+    import scipy.io.wavfile
     import torch
-    from audiocraft.models import MusicGen
-    from audiocraft.data.audio import audio_write
+    from transformers import pipeline
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    log.info("Device: %s", device)
+    device = 0 if torch.cuda.is_available() else -1
+    dtype  = torch.float16 if device == 0 else torch.float32
+    log.info("Device: %s  dtype: %s", "cuda:0" if device == 0 else "cpu", dtype)
     log.info("Loading %s ...", args.model)
-    model = MusicGen.get_pretrained(args.model, device=device)
-    model.set_generation_params(duration=args.duration)
+    pipe = pipeline(
+        "text-to-audio",
+        model=args.model,
+        device=device,
+        torch_dtype=dtype,
+    )
+    # 50 audio tokens per second of output
+    max_new_tokens = int(args.duration * 50)
+    generate_kwargs = {
+        "do_sample": True,
+        "temperature": 1.0,
+        "max_new_tokens": max_new_tokens,
+    }
 
     prompts = build_prompts(args.n_clips, seed=args.seed)
-    log.info("Generating %d clips at %ss each", len(prompts), args.duration)
+    log.info("Generating %d clips at %ss each (max_new_tokens=%d)",
+             len(prompts), args.duration, max_new_tokens)
 
     done = 0
     skipped = 0
@@ -115,18 +127,25 @@ def main():
         if not pending_prompts:
             continue
 
-        with torch.no_grad():
-            wav_batch = model.generate(pending_prompts, progress=False)
-
-        for pid, wav in zip(pending_ids, wav_batch):
-            # audio_write strips the extension — pass path without .wav
-            audio_write(
-                str(out_dir / pid),
-                wav.cpu(),
-                model.sample_rate,
-                strategy="loudness",
-                loudness_compressor=True,
-            )
+        # The pipeline accepts a list of prompts; returns a list of dicts
+        outputs = pipe(
+            pending_prompts,
+            batch_size=args.batch_size,
+            generate_kwargs=generate_kwargs,
+        )
+        # outputs is a list (one per prompt); each is {"audio": ndarray, "sampling_rate": int}
+        for pid, out in zip(pending_ids, outputs):
+            audio = out["audio"]
+            sr = out["sampling_rate"]
+            # audio shape is (1, n_samples) or (n_channels, n_samples) — take first channel
+            if audio.ndim == 3:
+                audio = audio[0]
+            if audio.ndim == 2:
+                audio = audio[0]
+            # Clip to [-1, 1] and convert to int16 for WAV
+            audio = np.clip(audio, -1.0, 1.0)
+            audio_i16 = (audio * 32767).astype(np.int16)
+            scipy.io.wavfile.write(str(out_dir / f"{pid}.wav"), sr, audio_i16)
             done += 1
 
         if (batch_start // args.batch_size) % 25 == 0:
