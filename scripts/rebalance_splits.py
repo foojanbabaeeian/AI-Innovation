@@ -30,7 +30,11 @@ VAL_RATIO   = 0.15
 # test = remainder = 0.15
 
 # Datasets whose splits are authoritative and must not be changed.
-FROZEN_DATASETS = {"asvspoof2019"}
+# (Empty: this paper is a standalone multi-branch fusion study, not an ASVspoof
+# leaderboard submission, so we stratify all sources uniformly to get usable
+# 70/15/15 splits. ASVspoof's official eval-heavy protocol would otherwise
+# leave ~52% of all data in 'test'.)
+FROZEN_DATASETS: set[str] = set()
 
 
 def assign_split(sample_id: str) -> str:
