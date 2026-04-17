@@ -272,6 +272,10 @@ def main():
                         help="Cap test-set size for smoke testing.")
     parser.add_argument("--manifest", default=None,
                         help="Override config manifest path (e.g. segmented manifest).")
+    parser.add_argument("--sources", nargs="+", default=None,
+                        help="Whitelist of source_dataset values. "
+                             "Cross-dataset: train on ASVspoof19, evaluate with "
+                             "'--sources asvspoof2021' for generalization EER.")
     args = parser.parse_args()
 
     config = Config.from_yaml(args.config)
@@ -283,8 +287,11 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     print(f"Outputs: {out_dir}")
 
-    # Build test dataset
+    # Build test dataset. CLI --sources takes precedence over config.data.sources.
     manifest = args.manifest or config.data.manifest_path
+    source_filter = args.sources or (list(config.data.sources) if config.data.sources else None)
+    if source_filter:
+        print(f"Source filter: {source_filter}")
     dataset = ManifestAudioDataset(
         manifest_path=manifest,
         data_root=config.data.data_root,
@@ -292,6 +299,7 @@ def main():
         target_sr=config.audio.sample_rate,
         segment_length=config.data.segment_length,
         max_samples=args.max_samples,
+        sources=source_filter,
     )
     print(f"Test set: {len(dataset)} segments")
 

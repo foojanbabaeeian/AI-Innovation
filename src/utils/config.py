@@ -59,6 +59,9 @@ class DataConfig:
     augment_prob: float = 0.5
     threshold_low: float = 0.2
     threshold_high: float = 0.8
+    # Optional source whitelist — cross-dataset and single-domain ablations.
+    # Empty/None = use all sources. Overridable via CLI --sources.
+    sources: List[str] = field(default_factory=list)
 
 
 @dataclass

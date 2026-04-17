@@ -45,6 +45,10 @@ class ManifestAudioDataset(Dataset):
         augmentor: Optional callable applied to each waveform after loading.
             Typically a ``CodecAugmentor`` for the train split; pass ``None``
             (default) for val/test to keep eval deterministic.
+        sources: Optional whitelist of ``source_dataset`` values. If provided,
+            only rows whose ``source_dataset`` is in this set are used. Enables
+            cross-dataset experiments (train on ASVspoof19, test on ASVspoof21)
+            and single-domain ablations without building separate manifests.
     """
 
     def __init__(
@@ -56,6 +60,7 @@ class ManifestAudioDataset(Dataset):
         segment_length: int = 64000,
         max_samples: Optional[int] = None,
         augmentor: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
+        sources: Optional[list[str]] = None,
     ):
         self.data_root = Path(data_root)
         self.target_sr = target_sr
@@ -64,6 +69,11 @@ class ManifestAudioDataset(Dataset):
 
         df = pd.read_csv(manifest_path)
         df = df[df["split"] == split].reset_index(drop=True)
+
+        if sources is not None:
+            before = len(df)
+            df = df[df["source_dataset"].isin(sources)].reset_index(drop=True)
+            logger.info("Source filter %s: kept %d / %d rows", sources, len(df), before)
 
         if max_samples is not None:
             df = df.iloc[:max_samples]
@@ -147,6 +157,7 @@ def build_dataloader(
     segment_length: int = 64000,
     max_samples: Optional[int] = None,
     augmentor: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
+    sources: Optional[list[str]] = None,
 ) -> Optional[DataLoader]:
     """Build a DataLoader for one split from the master manifest.
 
@@ -180,6 +191,7 @@ def build_dataloader(
         segment_length=segment_length,
         max_samples=max_samples,
         augmentor=augmentor,
+        sources=sources,
     )
 
     if len(dataset) == 0:

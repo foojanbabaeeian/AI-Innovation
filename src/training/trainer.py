@@ -79,17 +79,25 @@ class Trainer:
             print(f"Codec augmentation ENABLED for train split "
                   f"(p={config.augmentation.probability}, ffmpeg={'yes' if train_augmentor.has_ffmpeg else 'no'})")
 
+        # Optional source filter (cross-dataset experiments, domain ablations).
+        # Applied to BOTH train and val so val EER reflects the same subcorpus.
+        sources = list(getattr(config.data, "sources", None) or []) or None
+        if sources:
+            print(f"Source filter active: {sources}")
+
         # Data -- parallel loading via num_workers
         self.train_loader = build_dataloader(
             config.data.manifest_path, config.data.data_root, "train",
             batch_size=config.data.batch_size, num_workers=config.data.num_workers,
             target_sr=config.data.target_sr, segment_length=config.data.segment_length,
             augmentor=train_augmentor,
+            sources=sources,
         )
         self.val_loader = build_dataloader(
             config.data.manifest_path, config.data.data_root, "val",
             batch_size=config.data.batch_size, num_workers=config.data.num_workers,
             target_sr=config.data.target_sr, segment_length=config.data.segment_length,
+            sources=sources,
             # No augmentor for val: evaluation must be deterministic.
         )
 
