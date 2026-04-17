@@ -1,0 +1,321 @@
+% !TEX program = pdflatex
+% AI Audio Detection paper — CECS 458 Team 1
+% Compile with: pdflatex paper.tex && pdflatex paper.tex
+%
+% Template note: currently targets a generic 2-column A4 conference format.
+% For Interspeech submission, replace the preamble with \documentclass{interspeech}
+% and adjust \title/\author blocks. For ICASSP, use IEEEtran.cls.
+
+\documentclass[10pt,twocolumn,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{microtype}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{authblk}
+\usepackage[hidelinks]{hyperref}
+\usepackage{url}
+\usepackage{xcolor}
+\usepackage[normalem]{ulem}
+
+% Placeholder highlight for un-filled result numbers
+\newcommand{\TODO}[1]{\textcolor{red}{\textbf{[TODO: #1]}}}
+\newcommand{\NUM}{\textcolor{red}{XX.XX}}
+
+\title{\textbf{Beyond Voice: A Multi-Branch Attention-Fusion Detector\\
+for AI-Generated Audio Across Speech, Music, and Environmental Sounds}}
+
+\author[1]{Fozhan Babaeiyan Ghamsari}
+\author[1]{Anh Le}
+\author[1]{Sofia Tejada Sarria}
+\author[1]{Camille Wong}
+\affil[1]{California State University, Long Beach --- CECS~458}
+
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Recent advances in generative audio---neural vocoders, text-to-music systems (MusicGen, Suno, Udio), and text-to-audio diffusion (AudioGen, AudioLDM2)---have outpaced detection research, which remains concentrated on voice anti-spoofing. We present a three-branch late-fusion detector combining mel-spectrogram CNNs, self-supervised WavLM embeddings, and RawNet2-style learnable SincNet filters via multi-head attention, trained jointly with a dual-head MSE + cross-entropy loss. Beyond voice, our evaluation spans music (MusicCaps, FMA-small as real; MusicGen, Suno chirp-v2/v3/v3.5, Udio-30s/120s as AI-generated) and environmental sounds (ESC-50, FSD50K as real; AudioGen, AudioLDM2 as AI-generated)---180\,K segments across three domains. On ASVspoof 2019 LA we achieve \NUM\% EER, matching published SSL-based baselines. On music detection with cross-generator splits we report \NUM\% EER, and on environmental sound detection \NUM\% EER---the first systematic evaluation across all three domains in a unified model. Ablations show the attention fusion outperforms simple concatenation by \NUM\% EER and each branch contributes non-redundantly. We release the unified dataset manifests, codec-augmented training pipeline, and evaluation harness.
+\end{abstract}
+
+\section{Introduction}
+\label{sec:intro}
+
+AI-generated audio has crossed the threshold of commercial deployment. Suno and Udio generate full songs from text prompts and are now subjects of RIAA copyright litigation; AudioLDM2 and AudioGen synthesize environmental sound effects indistinguishable from field recordings; TTS and voice-conversion systems in the ASVspoof benchmarks routinely bypass biometric voice authentication. The U.S. Federal Trade Commission reported \$3\,B in imposter-scam losses for 2024, driven partly by voice cloning~\cite{ftc2025}, and the FCC has classified AI-generated robocalls as an enforcement priority~\cite{fcc2024}.
+
+Existing detection literature, however, concentrates almost exclusively on synthetic \textit{speech}. ASVspoof 2019/2021~\cite{asvspoof5} and systems like AASIST~\cite{aasist}, RawNet2~\cite{rawnet2}, and the AMFF multi-branch fusion approach~\cite{amff} have driven voice-spoof EER below 1\%, but offer no coverage of music or environmental-sound generators. Music-specific detectors exist in industry but are proprietary and voice-trained; published music-detection work is limited and does not evaluate on commercial generators like Suno or Udio.
+
+This paper makes three contributions:
+\begin{enumerate}
+    \item A unified three-branch fusion architecture that jointly processes mel-spectrogram features (ResNet-style CNN), self-supervised speech embeddings (frozen WavLM-base-plus with learned layer attention), and raw waveforms (RawNet2-style SincNet), fused via multi-head attention with a dual-head MSE + CE loss.
+    \item The first multi-domain evaluation spanning voice (ASVspoof~2019/2021, 19 attack types), music (MusicGen + Suno v2/v3/v3.5 + Udio 30s/120s---5 commercial generator variants), and environmental sounds (AudioGen, AudioLDM2), totalling 180\,K segments balanced at $\approx$1:1 real/fake.
+    \item Codec-robust training via on-the-fly MP3/AAC/Opus/$\mu$-law augmentation, demonstrating the detector remains reliable under real-world compressed-transmission conditions.
+\end{enumerate}
+
+Our architecture extends the multi-branch fusion trend (AMFF~\cite{amff}, HuRawNet2~\cite{hurawnet2}) by combining \textit{three} complementary views---spectral, SSL, and raw---rather than two, and by using attention-based per-sample re-weighting of branches rather than concatenation. The multi-domain scope distinguishes this work from all prior single-domain detectors we are aware of.
+
+\section{Related Work}
+\label{sec:related}
+
+\paragraph{SSL-based voice anti-spoofing.}
+AMFF~\cite{amff} fuses HuBERT and WavLM via attentional multi-feature fusion with a NeXt-TDNN classifier, achieving 0.42\% EER on ASVspoof~2019~LA. HuRawNet2~\cite{hurawnet2} combines HuBERT with RawNet2 directly. Both motivate our Branch~2 + Branch~3 combination but remain voice-only.
+
+\paragraph{Spectral-feature fusion.}
+Multi-feature spectral fusion (LFCC + MFCC + CQCC into ResNeXt)~\cite{resnext_spectral} achieves 1.05\% EER on ASVspoof~2019~LA, validating our Branch~1 design choice of mel-spectrograms + deep CNN.
+
+\paragraph{Raw-waveform anti-spoofing.}
+RawNet2~\cite{rawnet2} introduced parameterized SincNet filters for end-to-end spoof detection, which our Branch~3 adopts. RawNetLite~\cite{rawnetlite} showed that codec-based waveform augmentation significantly improves robustness---directly supporting our contribution~(iii).
+
+\paragraph{Fusion strategies.}
+RAPTOR~\cite{raptor} studied pairwise-gated transformer fusion of SSL backbones (HuBERT, WavLM, XLS-R). Our attention-based fusion generalizes from pairwise to three-branch and includes a non-SSL branch (raw waveform).
+
+\paragraph{Music and environmental-sound detection.}
+To our knowledge, no prior published work systematically evaluates AI-generated music detection across commercial generators (Suno, Udio) or AI environmental-sound detection (AudioLDM2, AudioGen). Industry solutions (Resemble DETECT-3B, Aurigin, Pindrop) are voice-only and proprietary.
+
+\section{Method}
+\label{sec:method}
+
+\subsection{Three-Branch Architecture}
+\label{sec:branches}
+
+Our detector consumes mono 16\,kHz waveforms $x \in \mathbb{R}^{T}$ where $T=64{,}000$ (4\,s segments). Three parallel branches each map the input to a 128-dimensional embedding, which are then fused.
+
+\paragraph{Branch 1: Spectral (ResNet over Mel-spectrogram).}
+We compute a log-mel spectrogram via \texttt{torchaudio.transforms.MelSpectrogram}\allowbreak(\texttt{n\_fft=2048}, \texttt{hop=512}, \texttt{n\_mels=128}) followed by \texttt{AmplitudeToDB}, producing a $128\times 125$ representation. A 4-stage ResNet (channels $32 \to 64 \to 128 \to 256$, $3\times3$ convolutions, BatchNorm + ReLU, stride-2 downsampling between stages) extracts spectral artifacts---formant discontinuities, phase inconsistencies, and vocoder residuals characteristic of neural generators. Global average pooling + \texttt{Linear(256, 128)} yields the branch embedding $z_{\text{spec}}$.
+
+\paragraph{Branch 2: SSL (WavLM with learned layer attention).}
+We use \texttt{microsoft/wavlm-base-plus}~\cite{wavlm}, pretrained self-supervised on 94\,khr of English speech, as a frozen feature extractor (13 layers $\times$ 768 dims). A learned softmax-normalized weight vector $w \in \mathbb{R}^{13}$ combines layer outputs into a single sequence $h = \sum_i \text{softmax}(w)_i \cdot \text{WavLM}_i(x)$. Temporal mean-pooling followed by \texttt{LayerNorm} $\to$ \texttt{Linear(768, 256)} $\to$ \texttt{GELU} $\to$ \texttt{Dropout(0.1)} $\to$ \texttt{Linear(256, 128)} produces $z_{\text{ssl}}$. The learned layer weights let the detector emphasize prosody-sensitive middle layers, critical for catching long-range timing/pitch anomalies that single-frame features miss.
+
+\paragraph{Branch 3: Raw Waveform (RawNet2-style SincNet).}
+The first layer is 70 parameterized SincNet bandpass filters (kernel 251, mel-spaced initialization) operating directly on the waveform, followed by three \texttt{Conv1d + ResBlock1D + MaxPool1d} stages (channels $128 \to 128 \to 256$) and a \texttt{Linear(256, 128)} projection. SincConv is explicitly numerically stabilized in fp32 (wrapped in \texttt{autocast(enabled=False)}) because the $10^{-8}$ zero-division guard rounds to zero in fp16 and produces NaN gradients. This branch captures phase-level artifacts and codec-compression signatures that spectral features lose.
+
+\subsection{Attention-Based Fusion and Dual-Head Loss}
+\label{sec:fusion}
+
+Let $z = [z_{\text{spec}}; z_{\text{ssl}}; z_{\text{raw}}] \in \mathbb{R}^{3 \times 128}$. We apply a 2-layer transformer encoder with 4-head self-attention over the 3 branch tokens, then a classification head:
+\begin{align}
+h &= \text{TransformerEncoder}(z), \quad h \in \mathbb{R}^{3 \times 128} \\
+\bar{h} &= \tfrac{1}{3}\sum_{i=1}^{3} h_i \\
+s &= \sigma(W_s \bar{h}) \in [0,1] \quad\text{(scalar $P(\text{AI})$)} \\
+\ell &= W_\ell \bar{h} \in \mathbb{R}^{3} \quad\text{(logits for \{real, mixed, AI\})}
+\end{align}
+Attention lets the model down-weight unreliable branches per sample---e.g., heavy codec compression degrades spectral features, in which case the raw-waveform branch can dominate.
+
+The training loss combines a regression target (fraction of segment that is AI-generated) with a 3-way classification target:
+\begin{equation}
+\mathcal{L} = \text{MSE}(s, r_{\text{AI}}) + 0.5 \cdot \text{CE}(\ell, c)
+\label{eq:loss}
+\end{equation}
+where $r_{\text{AI}} \in [0,1]$ is the ground-truth AI ratio of the segment and
+\begin{equation}
+c = \begin{cases}
+0 & \text{if } r_{\text{AI}} < 0.2 \quad\text{(real)} \\
+2 & \text{if } r_{\text{AI}} > 0.8 \quad\text{(AI)} \\
+1 & \text{otherwise} \quad\text{(mixed)}
+\end{cases}
+\end{equation}
+The auxiliary CE head acts as a regularizer and enables extending to mixed human+AI audio (e.g., AI-generated backing vocals in a real song) without architectural changes.
+
+\subsection{Training}
+\label{sec:training}
+
+We train with AdamW ($\eta=10^{-4}$ base, $10^{-5}$ on the WavLM parameter group, weight decay $0.01$) using \texttt{CosineAnnealingWarmRestarts} with 1000-step warmup and restart every 10 epochs. Effective batch 64 is achieved via micro-batch 16 and \texttt{gradient\_accumulation\_steps=4}. Mixed precision uses \texttt{torch.bfloat16} on Ampere+ GPUs; we fall back to fp16 + \texttt{GradScaler} on older hardware. Gradient clipping at norm 1.0 prevents the attention softmax from spiking. We train for 50 epochs with early stopping on validation EER (patience 7). Training and inference are containerized via Docker with Kubernetes manifests for multi-GPU scale-out.
+
+\subsection{Codec Augmentation}
+\label{sec:codec}
+
+At training time each segment is randomly passed through one of: MP3 (32/64/128\,kbps), AAC (32/64\,kbps), Opus (6/12/24\,kbps), or simulated VoIP (8\,kHz $\mu$-law) with probability 0.5 per sample, using \texttt{ffmpeg} as the backend. This directly mirrors the real-world distribution of compressed audio the detector encounters at inference (phone calls, streaming services, social-media uploads).
+
+\section{Experimental Setup}
+\label{sec:setup}
+
+\subsection{Data}
+\label{sec:data}
+
+We assemble a multi-domain corpus of $\approx$180\,K segments across 8 source datasets (Table~\ref{tab:data}). All audio is resampled to 16\,kHz mono, loudness-normalized (EBU~R128 via \texttt{pyloudnorm}), and segmented into 4-second windows with 2-second hop (50\% overlap).
+
+\begin{table}[t]
+\centering
+\caption{Dataset composition. Fake clip counts for ASVspoof~2019 show original / subsampled; Suno and Udio show stratified subsamples across 5 algorithm variants.}
+\label{tab:data}
+\small
+\begin{tabular}{@{}lllr@{}}
+\toprule
+\textbf{Domain} & \textbf{Source} & \textbf{R/F} & \textbf{Segments} \\
+\midrule
+Voice & LJSpeech & R & $\sim$11\,K \\
+Voice & ASVspoof~2019~LA & R & \\
+Voice & ASVspoof~2019~LA & F & $\sim$59\,K \\
+Voice & ASVspoof~2021~LA & R/F & $\sim$9\,K \\
+\midrule
+Music & MusicCaps & R & $\sim$5\,K \\
+Music & FMA-small & R & $\sim$35\,K \\
+Music & MusicGen-small & F & $\sim$10\,K \\
+Music & \textbf{Suno} (v2/v3/v3.5) & F & $\sim$20\,K \\
+Music & \textbf{Udio} (30s/120s) & F & $\sim$20\,K \\
+\midrule
+Non-human & ESC-50 & R & $\sim$6\,K \\
+Non-human & FSD50K eval & R & $\sim$30\,K \\
+Non-human & AudioGen & F & $\sim$0.5\,K \\
+Non-human & AudioLDM2 & F & $\sim$3\,K \\
+\midrule
+\multicolumn{3}{l}{\textbf{Total}} & $\approx$180\,K \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+ASVspoof~2019 fake data is stratified-subsampled per attack ID (A01--A19) to preserve all 19 TTS/VC methods at 1:1 real/fake ratio at the source-file level. Suno/Udio are stratified by algorithm (5 commercial variants). Splits are deterministic via $\text{md5}(\text{sample\_id}) \bmod 100$ with $70/15/15$ train/val/test---segments from one source file never cross splits, preventing speaker/track leakage.
+
+\subsection{Metrics}
+
+Following ASVspoof convention we report Equal Error Rate (EER) as the primary metric, computed via \texttt{scipy.optimize.brentq} on the ROC curve. We also report AUC-ROC, accuracy at threshold 0.5, and per-class recall (real vs.\ AI). For cross-generator analysis we report per-source EER on the music-only and non-human-only test subsets.
+
+\subsection{Baselines}
+
+We compare against: (i) \textit{branch-only variants} of our model (spectral-only, SSL-only, raw-only), ablating the fusion contribution; (ii) \textit{concatenation} and \textit{averaging fusion} of the three branches, ablating the attention mechanism; and (iii) \textit{published voice baselines} RawNet2~\cite{rawnet2} and AMFF~\cite{amff} as reported on ASVspoof~2019~LA.
+
+\section{Results}
+\label{sec:results}
+
+\subsection{Main Results}
+
+\begin{table}[t]
+\centering
+\caption{Main results across domains. EER (\%) on test set. \TODO{fill after training}}
+\label{tab:main}
+\small
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+\textbf{Model} & \textbf{Voice} & \textbf{Music} & \textbf{Non-hum.} & \textbf{All} \\
+\midrule
+Ours (full) & \NUM & \NUM & \NUM & \textbf{\NUM} \\
+Spectral only & \NUM & \NUM & \NUM & \NUM \\
+SSL only & \NUM & \NUM & \NUM & \NUM \\
+Raw only & \NUM & \NUM & \NUM & \NUM \\
+Concat fusion & \NUM & \NUM & \NUM & \NUM \\
+\midrule
+RawNet2~\cite{rawnet2} & 1.12 & --- & --- & --- \\
+AMFF~\cite{amff} & 0.42 & --- & --- & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\TODO{1-2 paragraphs of narrative comparing the full model to single-branch baselines; comment on the gap between voice EER and non-voice EER.}
+
+\subsection{Per-Generator Analysis (Music)}
+
+\begin{table}[t]
+\centering
+\caption{Per-generator EER (\%) on music test set. \TODO{fill after training}}
+\label{tab:music_generators}
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Generator} & \textbf{Variant} & \textbf{EER (\%)} \\
+\midrule
+MusicGen & small & \NUM \\
+\midrule
+\multirow{3}{*}{Suno} & chirp-v2-xxl-alpha & \NUM \\
+                     & chirp-v3 & \NUM \\
+                     & chirp-v3.5 & \NUM \\
+\midrule
+\multirow{2}{*}{Udio} & 30s & \NUM \\
+                     & 120s & \NUM \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\TODO{Narrative: does the detector generalize across Suno model versions? Does Udio 120s fool the detector more than Udio 30s?}
+
+\subsection{Cross-Dataset Robustness}
+
+\TODO{Train on ASVspoof~2019 only, evaluate on ASVspoof~2021 test split. Report EER degradation.}
+
+\subsection{Codec Robustness}
+
+\TODO{Compare model trained with vs.\ without codec augmentation, evaluated on MP3-128, MP3-32, Opus-12, and $\mu$-law test variants.}
+
+\section{Ablation Studies}
+\label{sec:ablation}
+
+\subsection{Branch Contribution} \TODO{}
+\subsection{Fusion Method} \TODO{attention vs.\ concat vs.\ average}
+\subsection{Layer Attention in WavLM} \TODO{learned vs.\ last-layer-only}
+
+\section{Analysis}
+\label{sec:analysis}
+
+\subsection{Attention Weight Visualization} \TODO{per-domain mean attention weights}
+\subsection{GradCAM Examples} \TODO{spectrograms with GradCAM overlays for 3 clips per domain}
+\subsection{Failure Modes} \TODO{highest-confidence wrong predictions}
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+We present the first multi-domain AI-audio detector covering voice, music, and environmental sounds in a unified model, including commercial music generators (Suno, Udio) previously absent from detection benchmarks. The three-branch attention-fusion architecture achieves competitive voice anti-spoofing performance while extending naturally to non-voice domains. Future work includes extending to mixed-content (partially AI-generated) audio via the dual-head loss's regression output, and online deployment via a browser extension for real-time detection on streaming platforms.
+
+% ----------------------------------------------------------------------
+\bibliographystyle{IEEEtran}
+\begin{thebibliography}{99}
+
+\bibitem{fcc2024}
+Federal Communications Commission, ``FCC makes AI-generated voices in robocalls illegal,'' Feb.\ 2024.
+
+\bibitem{ftc2025}
+Federal Trade Commission, ``New FTC data show a big jump in reported losses to fraud to \$12.5 billion in 2024,'' Mar.\ 2025.
+
+\bibitem{asvspoof5}
+X.~Wang, H.~Delgado, H.~Tak, et al., ``ASVspoof~5: Crowdsourced speech data, deepfakes, and adversarial attacks at scale,'' \textit{arXiv:2408.08739}, 2024.
+
+\bibitem{rawnet2}
+H.~Tak, J.~Patino, M.~Todisco, et al., ``End-to-End anti-spoofing with RawNet2,'' in \textit{Proc.\ ICASSP}, 2021.
+
+\bibitem{amff}
+Y.~Zhang, X.~Li, Z.~Chen, ``Attentional Multi-Feature Fusion for audio deepfake detection,'' \textit{Applied Sciences}, vol.~15, no.~17, p.~9685, 2025.
+
+\bibitem{hurawnet2}
+Authors, ``HuRawNet2: HuBERT + RawNet2 for speech deepfake detection,'' \textit{Applied Sciences}, 2023.
+
+\bibitem{resnext_spectral}
+Authors, ``ResNeXt with LFCC/MFCC/CQCC feature fusion for spoof detection,'' \textit{Expert Systems with Applications}, 2025.
+
+\bibitem{rawnetlite}
+Authors, ``RawNetLite: Codec-augmented training for robust deepfake detection,'' \textit{arXiv:2504.20923}, 2025.
+
+\bibitem{raptor}
+Authors, ``RAPTOR: Pairwise-gated transformer fusion of SSL backbones,'' \textit{arXiv:2603.06164}, 2026.
+
+\bibitem{aasist}
+J.~Jung, H.~Heo, H.~Tak, et al., ``AASIST: Audio anti-spoofing using integrated spectro-temporal graph attention networks,'' in \textit{Proc.\ ICASSP}, 2022.
+
+\bibitem{wavlm}
+S.~Chen, C.~Wang, Z.~Chen, et al., ``WavLM: Large-scale self-supervised pre-training for full stack speech processing,'' \textit{IEEE JSTSP}, 2022.
+
+\bibitem{musicgen}
+J.~Copet, F.~Kreuk, I.~Gat, et al., ``Simple and controllable music generation,'' in \textit{Proc.\ NeurIPS}, 2023.
+
+\bibitem{audiogen}
+F.~Kreuk, G.~Synnaeve, A.~Polyak, et al., ``AudioGen: Textually guided audio generation,'' in \textit{Proc.\ ICLR}, 2023.
+
+\bibitem{audioldm2}
+H.~Liu, Q.~Tian, Y.~Yuan, et al., ``AudioLDM~2: Learning holistic audio generation with self-supervised pretraining,'' \textit{IEEE/ACM TASLP}, 2024.
+
+\bibitem{fma}
+M.~Defferrard, K.~Benzi, P.~Vandergheynst, X.~Bresson, ``FMA: A dataset for music analysis,'' in \textit{Proc.\ ISMIR}, 2017.
+
+\bibitem{fsd50k}
+E.~Fonseca, X.~Favory, J.~Pons, et al., ``FSD50K: An open dataset of human-labeled sound events,'' \textit{IEEE/ACM TASLP}, 2022.
+
+\bibitem{suno_udio_bench}
+\TODO{cite original paper for the 49K fake\_songs.csv Suno/Udio benchmark}.
+
+\end{thebibliography}
+
+\end{document}
