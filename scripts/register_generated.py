@@ -48,13 +48,17 @@ def assign_split(sample_id: str) -> str:
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--dir",       required=True, help="Directory of generated .wav files")
+    p.add_argument("--dir",       required=True, help="Directory of audio files to register")
     p.add_argument("--domain",    required=True, choices=["voice", "music", "non_human"])
     p.add_argument("--source",    required=True, help="source_dataset column value")
     p.add_argument("--generator", required=True, help="generator column value")
     p.add_argument("--data-root", default=str(ROOT),
                    help="Root to make file_path relative against (default: project root)")
     p.add_argument("--label",     type=float, default=1.0, help="0.0 real, 1.0 fake (default 1.0)")
+    p.add_argument("--pattern",   default="*.wav",
+                   help="Glob pattern for audio files (default '*.wav'). Use '*.mp3' for FMA.")
+    p.add_argument("--recursive", action="store_true",
+                   help="Scan subdirectories recursively (needed for FMA's 000/001/... layout).")
     p.add_argument("--dry-run",   action="store_true")
     args = p.parse_args()
 
@@ -73,18 +77,22 @@ def main():
             existing_rows = list(csv.DictReader(f))
         existing_ids = {r["sample_id"] for r in existing_rows}
 
+    # Collect audio files using the chosen pattern (and recursion if requested).
+    glob_fn = gen_dir.rglob if args.recursive else gen_dir.glob
+    audio_files = sorted(glob_fn(args.pattern))
+
     # Build new rows.
     new_rows = []
-    for wav in sorted(gen_dir.glob("*.wav")):
-        sample_id = f"{args.source}_{wav.stem}"
+    for audio in audio_files:
+        sample_id = f"{args.source}_{audio.stem}"
         if sample_id in existing_ids:
             continue
 
         try:
-            file_path = str(wav.relative_to(data_root)).replace("\\", "/")
+            file_path = str(audio.relative_to(data_root)).replace("\\", "/")
         except ValueError:
             # Not under data_root — fall back to absolute path.
-            file_path = str(wav).replace("\\", "/")
+            file_path = str(audio).replace("\\", "/")
 
         new_rows.append({
             "sample_id":      sample_id,
@@ -96,9 +104,9 @@ def main():
             "split":          assign_split(sample_id),
         })
 
-    print(f"Scanning {gen_dir}")
-    print(f"  Files on disk: {len(list(gen_dir.glob('*.wav')))}")
-    print(f"  New rows to add: {len(new_rows)}  (duplicates skipped: {len(list(gen_dir.glob('*.wav'))) - len(new_rows)})")
+    print(f"Scanning {gen_dir}  (pattern={args.pattern}  recursive={args.recursive})")
+    print(f"  Files on disk: {len(audio_files)}")
+    print(f"  New rows to add: {len(new_rows)}  (duplicates skipped: {len(audio_files) - len(new_rows)})")
 
     if new_rows:
         print("\n  Split distribution:")
