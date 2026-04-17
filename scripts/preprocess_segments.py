@@ -74,9 +74,24 @@ DEFAULT_SR = 16_000
 # ── Worker function (runs in subprocess) ─────────────────────────────────────
 
 def _process_row(args):
-    """Load one source file, segment it, return list of output rows."""
-    row, processed_root, dry_run = args
+    """Load one source file, segment it, return list of output rows.
 
+    Wraps the entire per-row body in a broad except. Google Drive Streaming
+    periodically returns OSError(Errno 5 "Input/output error") on even benign
+    calls like Path.exists() — if we let that propagate it kills the whole
+    ProcessPoolExecutor. Returning an error string keeps the run going and
+    lets the script be re-invoked later to retry the failed files."""
+    row, processed_root, dry_run = args
+    try:
+        return _process_row_impl(row, processed_root, dry_run)
+    except OSError as e:
+        return [], f"IO_ERROR ({e.__class__.__name__} errno={e.errno}): {row.get('file_path', '?')}"
+    except Exception as e:
+        return [], f"UNEXPECTED_ERROR ({e.__class__.__name__}: {e}): {row.get('file_path', '?')}"
+
+
+def _process_row_impl(row, processed_root, dry_run):
+    """Actual per-row logic — kept separate so _process_row can wrap it."""
     import math
     import torch
     import torchaudio
@@ -159,8 +174,21 @@ def _process_row(args):
         out_path = out_dir / seg_name
         sample_id = f"{source}_{stem}_seg{seg_idx:04d}"
 
-        if not dry_run and not out_path.exists():
-            torchaudio.save(str(out_path), chunk, target_sr)
+        if not dry_run:
+            # Retry once on transient Drive I/O errors. The .exists() check
+            # itself can OSError on Drive Streaming — treat "can't tell" as
+            # "overwrite" rather than crashing the whole worker.
+            already_exists = False
+            try:
+                already_exists = out_path.exists()
+            except OSError:
+                already_exists = False
+            if not already_exists:
+                try:
+                    torchaudio.save(str(out_path), chunk, target_sr)
+                except OSError:
+                    # Try once more; Drive Streaming is eventually consistent.
+                    torchaudio.save(str(out_path), chunk, target_sr)
 
         output_rows.append({
             "sample_id":      sample_id,
