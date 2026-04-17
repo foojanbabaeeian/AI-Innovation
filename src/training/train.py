@@ -66,6 +66,11 @@ def main():
         "--no-augmentation", action="store_true",
         help="Disable codec augmentation for this run (used for the no-aug ablation row).",
     )
+    parser.add_argument(
+        "--sources", nargs="+", default=None,
+        help="Whitelist of source_dataset values (e.g. asvspoof2019 asvspoof2021). "
+             "Enables cross-dataset training and single-domain ablations.",
+    )
     args = parser.parse_args()
 
     config = Config.from_yaml(args.config)
@@ -85,6 +90,8 @@ def main():
         config.logging.experiment_name = args.experiment_name
     if args.no_augmentation:
         config.augmentation.enabled = False
+    if args.sources:
+        config.data.sources = list(args.sources)
 
     trainer = Trainer(config)
 
