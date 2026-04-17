@@ -70,6 +70,15 @@ class ModelConfig:
     ssl_model_name: str = "microsoft/wavlm-base-plus"
     freeze_ssl_feature_extractor: bool = True
     dropout: float = 0.1
+    # Ablation knobs (default behavior = full three-branch attention fusion).
+    # disable_branches: subset of {"spectral", "ssl", "rawnet"} to skip entirely.
+    #   Paper ablations: ["ssl","rawnet"] for spectral-only, etc.
+    # fusion_method: how to combine the remaining branch embeddings.
+    #   "attention" = learned multi-head attention (default, our contribution)
+    #   "concat"    = simple concatenation (ablation baseline)
+    #   "average"   = mean pooling across branches (ablation baseline)
+    disable_branches: List[str] = field(default_factory=list)
+    fusion_method: str = "attention"
 
 
 @dataclass

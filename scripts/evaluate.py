@@ -57,6 +57,8 @@ def load_model(config: Config, checkpoint_path: str, device: torch.device) -> Mu
         ssl_model_name=config.model.ssl_model_name,
         freeze_ssl_feature_extractor=config.model.freeze_ssl_feature_extractor,
         dropout=config.model.dropout,
+        disable_branches=list(config.model.disable_branches),
+        fusion_method=config.model.fusion_method,
     ).to(device)
 
     ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
