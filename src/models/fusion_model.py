@@ -72,6 +72,9 @@ class MultiBranchFusionModel(nn.Module):
         class_label: 0 = real (ai_ratio < 0.2), 1 = mixed (0.2 <= ai_ratio <= 0.8), 2 = AI (ai_ratio > 0.8)
     """
 
+    # Canonical branch order; forward() always emits embeddings in this order.
+    BRANCH_ORDER = ("spectral", "ssl", "rawnet")
+
     def __init__(
         self,
         sample_rate: int = 16000,
@@ -82,38 +85,63 @@ class MultiBranchFusionModel(nn.Module):
         ssl_model_name: str = "microsoft/wavlm-base-plus",
         freeze_ssl_feature_extractor: bool = True,
         dropout: float = 0.1,
+        disable_branches: list[str] | None = None,
+        fusion_method: str = "attention",
     ):
         super().__init__()
         self.embed_dim = embed_dim
         self.num_classes = num_classes
 
-        # Branch 1: Spectral CNN
-        self.spectral_branch = SpectralBranch(
-            sample_rate=sample_rate,
-            embed_dim=embed_dim,
-        )
+        # Validate ablation knobs
+        disabled = set(disable_branches or [])
+        unknown = disabled - set(self.BRANCH_ORDER)
+        if unknown:
+            raise ValueError(f"Unknown branches in disable_branches: {unknown}. "
+                             f"Valid: {self.BRANCH_ORDER}")
+        self.disabled_branches = disabled
+        self.active_branches = tuple(b for b in self.BRANCH_ORDER if b not in disabled)
+        if not self.active_branches:
+            raise ValueError("At least one branch must be enabled.")
 
-        # Branch 2: SSL (WavLM / wav2vec2)
-        self.ssl_branch = SSLBranch(
-            model_name=ssl_model_name,
-            embed_dim=embed_dim,
-            freeze_feature_extractor=freeze_ssl_feature_extractor,
-        )
+        if fusion_method not in ("attention", "concat", "average"):
+            raise ValueError(f"fusion_method must be one of "
+                             f"'attention', 'concat', 'average'; got {fusion_method!r}")
+        self.fusion_method = fusion_method
 
-        # Branch 3: Raw waveform (SincNet + ResNet1D)
-        self.rawnet_branch = RawNetBranch(
-            sample_rate=sample_rate,
-            embed_dim=embed_dim,
-        )
+        # Only instantiate branches that are active (saves params + compute on ablations).
+        if "spectral" in self.active_branches:
+            self.spectral_branch = SpectralBranch(
+                sample_rate=sample_rate,
+                embed_dim=embed_dim,
+            )
+        if "ssl" in self.active_branches:
+            self.ssl_branch = SSLBranch(
+                model_name=ssl_model_name,
+                embed_dim=embed_dim,
+                freeze_feature_extractor=freeze_ssl_feature_extractor,
+            )
+        if "rawnet" in self.active_branches:
+            self.rawnet_branch = RawNetBranch(
+                sample_rate=sample_rate,
+                embed_dim=embed_dim,
+            )
 
-        # Cross-branch attention fusion
-        self.attention_layers = nn.ModuleList([
-            CrossBranchAttention(embed_dim, num_attention_heads, dropout)
-            for _ in range(num_attention_layers)
-        ])
+        # Cross-branch attention is only built when we actually use it AND when
+        # there are >=2 active branches (attention over 1 token is a no-op).
+        n_active = len(self.active_branches)
+        if fusion_method == "attention" and n_active >= 2:
+            self.attention_layers = nn.ModuleList([
+                CrossBranchAttention(embed_dim, num_attention_heads, dropout)
+                for _ in range(num_attention_layers)
+            ])
+        else:
+            self.attention_layers = nn.ModuleList()
 
-        # Fused representation: concatenate attended branch outputs
-        fused_dim = embed_dim * 3
+        # Head input dimension depends on fusion strategy.
+        if fusion_method == "average" or n_active == 1:
+            fused_dim = embed_dim
+        else:  # attention or concat over multiple branches -> flattened
+            fused_dim = embed_dim * n_active
 
         # Regression head: continuous AI probability [0, 1]
         self.regression_head = nn.Sequential(
@@ -141,25 +169,36 @@ class MultiBranchFusionModel(nn.Module):
             dict with:
                 "regression_score": (batch,) -- P(AI) per segment
                 "class_logits": (batch, num_classes) -- [real, mixed, ai]
-                "branch_embeddings": (batch, 3, embed_dim) -- for analysis
+                "branch_embeddings": (batch, n_active, embed_dim) -- for analysis
         """
-        # Extract per-branch embeddings
-        spec_emb = self.spectral_branch(waveform)   # (batch, embed_dim)
-        ssl_emb = self.ssl_branch(waveform)          # (batch, embed_dim)
-        raw_emb = self.rawnet_branch(waveform)       # (batch, embed_dim)
+        # Extract per-branch embeddings for ACTIVE branches only.
+        embeddings = []
+        if "spectral" in self.active_branches:
+            embeddings.append(self.spectral_branch(waveform))
+        if "ssl" in self.active_branches:
+            embeddings.append(self.ssl_branch(waveform))
+        if "rawnet" in self.active_branches:
+            embeddings.append(self.rawnet_branch(waveform))
 
-        # Stack as tokens for attention: (batch, 3, embed_dim)
-        branch_tokens = torch.stack([spec_emb, ssl_emb, raw_emb], dim=1)
+        # Stack as tokens: (batch, n_active, embed_dim)
+        branch_tokens = torch.stack(embeddings, dim=1)
 
-        # Cross-branch attention
-        for attn_layer in self.attention_layers:
-            branch_tokens = attn_layer(branch_tokens)
-
-        # Flatten attended branches into single vector
-        fused = branch_tokens.reshape(branch_tokens.size(0), -1)  # (batch, embed_dim * 3)
+        # Fusion
+        n_active = len(self.active_branches)
+        if n_active == 1:
+            # Single branch: bypass fusion entirely, use the one embedding.
+            fused = branch_tokens.squeeze(1)
+        elif self.fusion_method == "attention":
+            for attn_layer in self.attention_layers:
+                branch_tokens = attn_layer(branch_tokens)
+            fused = branch_tokens.reshape(branch_tokens.size(0), -1)
+        elif self.fusion_method == "concat":
+            fused = branch_tokens.reshape(branch_tokens.size(0), -1)
+        else:  # "average"
+            fused = branch_tokens.mean(dim=1)
 
         regression_score = self.regression_head(fused).squeeze(-1)  # (batch,)
-        class_logits = self.classification_head(fused)  # (batch, num_classes)
+        class_logits = self.classification_head(fused)              # (batch, num_classes)
 
         return {
             "regression_score": regression_score,

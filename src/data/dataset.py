@@ -12,7 +12,7 @@ Expected manifest columns:
 
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 import pandas as pd
 import torch
@@ -42,6 +42,9 @@ class ManifestAudioDataset(Dataset):
         target_sr: Target sample rate in Hz.
         segment_length: Fixed number of samples per segment.
         max_samples: Optional cap for smoke-testing.
+        augmentor: Optional callable applied to each waveform after loading.
+            Typically a ``CodecAugmentor`` for the train split; pass ``None``
+            (default) for val/test to keep eval deterministic.
     """
 
     def __init__(
@@ -52,10 +55,12 @@ class ManifestAudioDataset(Dataset):
         target_sr: int = 16000,
         segment_length: int = 64000,
         max_samples: Optional[int] = None,
+        augmentor: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
     ):
         self.data_root = Path(data_root)
         self.target_sr = target_sr
         self.segment_length = segment_length
+        self.augmentor = augmentor
 
         df = pd.read_csv(manifest_path)
         df = df[df["split"] == split].reset_index(drop=True)
@@ -77,6 +82,12 @@ class ManifestAudioDataset(Dataset):
         label = float(row.get("label", row.get("ai_ratio", 0.0)))
 
         waveform = self._load_audio(str(path))
+
+        # On-the-fly codec augmentation (train-only; val/test get None).
+        # Applied AFTER load/resample/pad so the augmentor always sees a
+        # fixed-length waveform at the model's target sample rate.
+        if self.augmentor is not None:
+            waveform = self.augmentor(waveform)
 
         return {
             "waveform": waveform,
@@ -135,6 +146,7 @@ def build_dataloader(
     target_sr: int = 16000,
     segment_length: int = 64000,
     max_samples: Optional[int] = None,
+    augmentor: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
 ) -> Optional[DataLoader]:
     """Build a DataLoader for one split from the master manifest.
 
@@ -149,6 +161,9 @@ def build_dataloader(
         target_sr: Target sample rate in Hz.
         segment_length: Fixed number of samples per segment.
         max_samples: Cap dataset size for smoke-testing.
+        augmentor: Optional per-sample waveform transform (e.g., CodecAugmentor).
+            Only pass this for the train split; leave ``None`` for val/test
+            to keep evaluation deterministic.
 
     Returns:
         DataLoader or None.
@@ -164,6 +179,7 @@ def build_dataloader(
         target_sr=target_sr,
         segment_length=segment_length,
         max_samples=max_samples,
+        augmentor=augmentor,
     )
 
     if len(dataset) == 0:

@@ -18,6 +18,7 @@ import torch
 import torch.nn as nn
 
 from src.models.fusion_model import MultiBranchFusionModel, DualHeadLoss
+from src.data.augmentation import CodecAugmentor
 from src.data.dataset import build_dataloader
 from src.utils.config import Config
 from src.utils.metrics import compute_metrics, format_metrics_table
@@ -38,7 +39,11 @@ class Trainer:
             ssl_model_name=config.model.ssl_model_name,
             freeze_ssl_feature_extractor=config.model.freeze_ssl_feature_extractor,
             dropout=config.model.dropout,
+            disable_branches=list(config.model.disable_branches),
+            fusion_method=config.model.fusion_method,
         ).to(self.device)
+        print(f"Model: active_branches={self.model.active_branches} "
+              f"fusion_method={self.model.fusion_method}")
 
         # Loss
         self.criterion = DualHeadLoss(
@@ -66,16 +71,26 @@ class Trainer:
         # Scheduler
         self.scheduler = self._build_scheduler()
 
+        # Codec augmentation: applied ONLY to the train split. Reads bitrate
+        # lists + probability from config.augmentation. If ffmpeg is missing,
+        # the augmentor logs a warning and falls back to VoIP-only transforms.
+        train_augmentor = CodecAugmentor.from_config(config) if config.augmentation.enabled else None
+        if train_augmentor is not None:
+            print(f"Codec augmentation ENABLED for train split "
+                  f"(p={config.augmentation.probability}, ffmpeg={'yes' if train_augmentor.has_ffmpeg else 'no'})")
+
         # Data -- parallel loading via num_workers
         self.train_loader = build_dataloader(
             config.data.manifest_path, config.data.data_root, "train",
             batch_size=config.data.batch_size, num_workers=config.data.num_workers,
             target_sr=config.data.target_sr, segment_length=config.data.segment_length,
+            augmentor=train_augmentor,
         )
         self.val_loader = build_dataloader(
             config.data.manifest_path, config.data.data_root, "val",
             batch_size=config.data.batch_size, num_workers=config.data.num_workers,
             target_sr=config.data.target_sr, segment_length=config.data.segment_length,
+            # No augmentor for val: evaluation must be deterministic.
         )
 
         # State
