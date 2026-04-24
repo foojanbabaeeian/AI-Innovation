@@ -84,6 +84,7 @@ class MultiBranchFusionModel(nn.Module):
         num_classes: int = 3,
         ssl_model_name: str = "microsoft/wavlm-base-plus",
         freeze_ssl_feature_extractor: bool = True,
+        freeze_ssl_encoder: bool = False,
         dropout: float = 0.1,
         disable_branches: list[str] | None = None,
         fusion_method: str = "attention",
@@ -118,6 +119,7 @@ class MultiBranchFusionModel(nn.Module):
             self.ssl_branch = SSLBranch(
                 model_name=ssl_model_name,
                 embed_dim=embed_dim,
+                freeze_encoder=freeze_ssl_encoder,
                 freeze_feature_extractor=freeze_ssl_feature_extractor,
             )
         if "rawnet" in self.active_branches:

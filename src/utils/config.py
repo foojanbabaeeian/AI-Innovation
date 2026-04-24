@@ -72,6 +72,7 @@ class ModelConfig:
     num_classes: int = 3  # real, mixed, AI
     ssl_model_name: str = "microsoft/wavlm-base-plus"
     freeze_ssl_feature_extractor: bool = True
+    freeze_ssl_encoder: bool = False
     dropout: float = 0.1
     # Ablation knobs (default behavior = full three-branch attention fusion).
     # disable_branches: subset of {"spectral", "ssl", "rawnet"} to skip entirely.
