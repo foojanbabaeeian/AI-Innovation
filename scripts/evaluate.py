@@ -29,7 +29,10 @@ Pass `--label "..."` to set the Model column value in the LaTeX row.
 """
 
 import argparse
+import csv
 import json
+import re
+from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
@@ -255,6 +258,24 @@ def latex_per_generator_rows(results: dict, label: str) -> str:
     return "\n".join([header] + lines)
 
 
+def compute_leaked_source_files(manifest_path: str) -> set[str]:
+    """Find source files whose segments span multiple splits.
+
+    A "source file" is a manifest entry keyed by ``sample_id`` with the trailing
+    ``_segNNNN`` suffix stripped. If segments sharing the same stripped id land
+    in more than one split, the test segments are effectively contaminated by
+    train/val siblings — any model can recognize them trivially.
+
+    Returns the set of stripped ids that leak across splits.
+    """
+    by_orig: dict[str, set[str]] = defaultdict(set)
+    with open(manifest_path, newline="", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            orig = re.sub(r"_seg\d+$", "", row["sample_id"])
+            by_orig[orig].add(row["split"])
+    return {orig for orig, splits in by_orig.items() if len(splits) > 1}
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config",     required=True, type=str,
@@ -276,6 +297,12 @@ def main():
                         help="Whitelist of source_dataset values. "
                              "Cross-dataset: train on ASVspoof19, evaluate with "
                              "'--sources asvspoof2021' for generalization EER.")
+    parser.add_argument("--exclude-leaked", action="store_true",
+                        help="Exclude test segments whose source file also has segments in "
+                             "the train or val splits. Use this when a prior manifest build "
+                             "incorrectly hashed by segment-stem instead of source-file, "
+                             "causing sibling segments to cross split boundaries. Reports "
+                             "honest held-out EER without requiring a retrain.")
     args = parser.parse_args()
 
     config = Config.from_yaml(args.config)
@@ -302,6 +329,22 @@ def main():
         sources=source_filter,
     )
     print(f"Test set: {len(dataset)} segments")
+
+    # Optional: drop test segments whose source file also appears in train/val.
+    # Fixes the "my EER is suspiciously low" failure mode when a prior manifest
+    # build incorrectly hashed by segment-stem and sibling segments crossed
+    # splits. Reports honest held-out EER without requiring a retrain.
+    if args.exclude_leaked:
+        leaked = compute_leaked_source_files(manifest)
+        before = len(dataset.records)
+        dataset.records = [
+            r for r in dataset.records
+            if re.sub(r"_seg\d+$", "", r["sample_id"]) not in leaked
+        ]
+        dropped = before - len(dataset.records)
+        print(f"--exclude-leaked: dropped {dropped} test segments "
+              f"(from {len(leaked)} leaked source files across the full manifest); "
+              f"{len(dataset.records)} test segments remain.")
 
     batch_size = args.batch_size or config.data.batch_size
     model = load_model(config, args.checkpoint, device)
