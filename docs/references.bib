@@ -1,0 +1,334 @@
+% BibTeX entries for the AI Audio Detector paper.
+% Grouped by topic. Keys are lowercase-with-underscores and short.
+
+% ─────────────────────────────────────────────────────────────────────────────
+% Policy / motivation
+% ─────────────────────────────────────────────────────────────────────────────
+@misc{fcc2024robocalls,
+  author       = {{Federal Communications Commission}},
+  title        = {{FCC} Makes {AI}-Generated Voices in Robocalls Illegal},
+  year         = {2024},
+  month        = feb,
+  howpublished = {\url{https://www.fcc.gov/document/fcc-makes-ai-generated-voices-robocalls-illegal}},
+}
+
+@misc{ftc2025fraud,
+  author       = {{Federal Trade Commission}},
+  title        = {New {FTC} Data Show a Big Jump in Reported Losses to Fraud to \$12.5 Billion in 2024},
+  year         = {2025},
+  month        = mar,
+  howpublished = {\url{https://www.ftc.gov/news-events/news/press-releases/2025/03/new-ftc-data-show-big-jump-reported-losses-fraud-125-billion-2024}},
+}
+
+@misc{billboard2025ai,
+  author       = {{Billboard}},
+  title        = {{AI} Music Timeline: From `Fake Drake' to Suno \& Udio Label Settlements},
+  year         = {2025},
+  month        = sep,
+  howpublished = {\url{https://www.billboard.com/lists/ai-music-timeline-fake-drake-suno-udio-label-settlements/}},
+}
+
+% ─────────────────────────────────────────────────────────────────────────────
+% ASVspoof benchmarks
+% ─────────────────────────────────────────────────────────────────────────────
+@inproceedings{asvspoof2019,
+  author    = {Massimiliano Todisco and Xin Wang and Ville Vestman and Md. Sahidullah and H{\'e}ctor Delgado and Andreas Nautsch and Junichi Yamagishi and Nicholas Evans and Tomi Kinnunen and Kong Aik Lee},
+  title     = {{ASVspoof} 2019: Future Horizons in Spoofed and Fake Audio Detection},
+  booktitle = {Proc.\ Interspeech},
+  year      = {2019},
+}
+
+@article{asvspoof2021,
+  author    = {Xuechen Liu and Xin Wang and Md. Sahidullah and Jose Patino and H{\'e}ctor Delgado and Tomi Kinnunen and Massimiliano Todisco and Junichi Yamagishi and Nicholas Evans and Andreas Nautsch and Kong Aik Lee},
+  title     = {{ASVspoof} 2021: Towards Spoofed and Deepfake Speech Detection in the Wild},
+  journal   = {IEEE/ACM Transactions on Audio, Speech, and Language Processing},
+  year      = {2023},
+  note      = {arXiv:2210.02437},
+}
+
+@article{asvspoof5,
+  author    = {Xin Wang and H{\'e}ctor Delgado and Hemlata Tak and Jee-weon Jung and Hye-jin Shim and Massimiliano Todisco and Ivan Kukanov and Xuechen Liu and Md Sahidullah and Tomi Kinnunen and Nicholas Evans and Kong Aik Lee and Junichi Yamagishi},
+  title     = {{ASVspoof} 5: Design, collection and validation of resources for spoofing, deepfake, and adversarial attack detection using crowdsourced speech},
+  journal   = {Computer Speech \& Language},
+  volume    = {95},
+  pages     = {101825},
+  year      = {2025},
+  doi       = {10.1016/j.csl.2025.101825},
+}
+
+% ─────────────────────────────────────────────────────────────────────────────
+% Voice anti-spoofing architectures (raw / spectral / SSL)
+% ─────────────────────────────────────────────────────────────────────────────
+@inproceedings{rawnet2,
+  author    = {Hemlata Tak and Jose Patino and Massimiliano Todisco and Andreas Nautsch and Nicholas Evans and Anthony Larcher},
+  title     = {End-to-End Anti-Spoofing with {RawNet2}},
+  booktitle = {Proc.\ IEEE ICASSP},
+  year      = {2021},
+}
+
+@inproceedings{aasist,
+  author    = {Jee-weon Jung and Hee-Soo Heo and Hemlata Tak and Hye-jin Shim and Joon Son Chung and Bong-Jin Lee and Ha-Jin Yu and Nicholas Evans},
+  title     = {{AASIST}: Audio Anti-Spoofing using Integrated Spectro-Temporal Graph Attention Networks},
+  booktitle = {Proc.\ IEEE ICASSP},
+  year      = {2022},
+}
+
+@article{sincnet,
+  author    = {Mirco Ravanelli and Yoshua Bengio},
+  title     = {Speaker Recognition from Raw Waveform with {SincNet}},
+  journal   = {Proc.\ IEEE Spoken Language Technology Workshop (SLT)},
+  year      = {2018},
+}
+
+% ─────────────────────────────────────────────────────────────────────────────
+% Self-supervised audio representations
+% ─────────────────────────────────────────────────────────────────────────────
+@article{wavlm,
+  author    = {Sanyuan Chen and Chengyi Wang and Zhengyang Chen and Yu Wu and Shujie Liu and Zhuo Chen and Jinyu Li and Naoyuki Kanda and Takuya Yoshioka and Xiong Xiao and Jian Wu and Long Zhou and Shuo Ren and Yanmin Qian and Yao Qian and Jian Wu and Michael Zeng and Xiangzhan Yu and Furu Wei},
+  title     = {{WavLM}: Large-Scale Self-Supervised Pre-Training for Full Stack Speech Processing},
+  journal   = {IEEE Journal of Selected Topics in Signal Processing},
+  volume    = {16},
+  number    = {6},
+  pages     = {1505--1518},
+  year      = {2022},
+}
+
+@inproceedings{wav2vec2,
+  author    = {Alexei Baevski and Henry Zhou and Abdelrahman Mohamed and Michael Auli},
+  title     = {{wav2vec 2.0}: A Framework for Self-Supervised Learning of Speech Representations},
+  booktitle = {Proc.\ NeurIPS},
+  year      = {2020},
+}
+
+@article{hubert,
+  author    = {Wei-Ning Hsu and Benjamin Bolte and Yao-Hung Hubert Tsai and Kushal Lakhotia and Ruslan Salakhutdinov and Abdelrahman Mohamed},
+  title     = {{HuBERT}: Self-Supervised Speech Representation Learning by Masked Prediction of Hidden Units},
+  journal   = {IEEE/ACM Transactions on Audio, Speech, and Language Processing},
+  volume    = {29},
+  pages     = {3451--3460},
+  year      = {2021},
+}
+
+% ─────────────────────────────────────────────────────────────────────────────
+% Multi-branch / multi-fusion audio deepfake detection (our closest prior art)
+% ─────────────────────────────────────────────────────────────────────────────
+@article{amff_nexttdnn_2025,
+  author    = {Yulong Zhang and others},
+  title     = {Robust {DeepFake} Audio Detection via an Improved {NeXt-TDNN} with Multi-Fused Self-Supervised Learning Features},
+  journal   = {Applied Sciences},
+  volume    = {15},
+  number    = {17},
+  pages     = {9685},
+  year      = {2025},
+  doi       = {10.3390/app15179685},
+  note      = {Fuses HuBERT-Large and WavLM-Large via attentional multi-feature fusion; 7.23\% EER on ASVspoof~2019~LA.},
+}
+
+@article{wavlm_mfac_2023,
+  author    = {Xiangyu Guo and others},
+  title     = {Audio Deepfake Detection with Self-Supervised {WavLM} and Multi-Fusion Attentive Classifier},
+  journal   = {arXiv:2312.08089},
+  year      = {2023},
+}
+
+@inproceedings{combei2024_wavlm_ensemble,
+  author    = {Mihnea Combei and others},
+  title     = {{WavLM} Model Ensemble for Audio Deepfake Detection},
+  booktitle = {Proc.\ ASVspoof Workshop},
+  year      = {2024},
+  note      = {Ensemble of MHFA systems; 6.4\% EER on In-The-Wild.},
+}
+
+@article{ssl_layer_fusion_2025,
+  author    = {Anonymous},
+  title     = {Improving Out-of-Domain Audio Deepfake Detection via Layer Selection and Fusion of {SSL}-Based Countermeasures},
+  journal   = {arXiv:2509.12003},
+  year      = {2025},
+  note      = {Learned layer-weighting over SSL backbones for out-of-distribution robustness.},
+}
+
+@article{hurawnet2_2023,
+  author    = {Anonymous},
+  title     = {{HuRawNet2}: Fusing {HuBERT} and {RawNet2} for Audio Deepfake Detection},
+  journal   = {Applied Sciences},
+  volume    = {13},
+  number    = {14},
+  pages     = {8488},
+  year      = {2023},
+  note      = {Two-branch SSL + raw-waveform fusion for anti-spoofing.},
+}
+
+@article{resnext_spectral_2025,
+  author    = {Anonymous},
+  title     = {{ResNeXt} with {LFCC}/{MFCC}/{CQCC} Feature Fusion for Spoof Detection},
+  journal   = {Expert Systems with Applications},
+  year      = {2025},
+  note      = {Three-spectral-feature fusion; 1.05\% EER on ASVspoof~2019~LA.},
+}
+
+@article{raptor_2026,
+  author    = {Anonymous},
+  title     = {{RAPTOR}: Pairwise-Gated Transformer Fusion of {SSL} Backbones for Audio Deepfake Detection},
+  journal   = {arXiv:2603.06164},
+  year      = {2026},
+}
+
+% ─────────────────────────────────────────────────────────────────────────────
+% Raw-waveform + codec augmentation
+% ─────────────────────────────────────────────────────────────────────────────
+@article{rawnetlite_2025,
+  author    = {Anonymous},
+  title     = {End-to-end Audio Deepfake Detection from {RAW} Waveforms: a {RawNet}-Based Approach with Cross-Dataset Evaluation},
+  journal   = {arXiv:2504.20923},
+  year      = {2025},
+  note      = {Lightweight raw-waveform detector trained with codec augmentation; 99.7\% F1 in-domain, 83.4\% F1 on ASVspoof 2021 + CodecFake.},
+}
+
+% ─────────────────────────────────────────────────────────────────────────────
+% Music deepfake detection (closest prior art for our music domain)
+% ─────────────────────────────────────────────────────────────────────────────
+@inproceedings{sonics_2024,
+  author    = {Md Awsafur Rahman and others},
+  title     = {{SONICS}: Synthetic Or Not --- Identifying Counterfeit Songs},
+  booktitle = {Proc.\ ICLR},
+  year      = {2025},
+  note      = {97K songs (49K+ synthetic from Suno/Udio); proposes the SpecTTTra transformer for long-context song detection. arXiv:2408.14080.},
+}
+
+@misc{mirex2025_song_deepfake,
+  author       = {{MIREX}},
+  title        = {2025: Song Deepfake Detection Challenge},
+  year         = {2025},
+  howpublished = {\url{https://www.music-ir.org/mirex/wiki/2025:Song_Deepfake_Detection}},
+  note         = {Community benchmark extending the 2024 SVDD challenge from vocal-only to full-song detection.},
+}
+
+% ─────────────────────────────────────────────────────────────────────────────
+% Multi-domain / cross-modality AI audio detection framing
+% ─────────────────────────────────────────────────────────────────────────────
+@misc{frontiers_aiaudio_2025,
+  author       = {{Frontiers Editorial}},
+  title        = {Detection of {AI}-Generated Audio: Speech, Environmental Sound, Music, and Beyond},
+  year         = {2025},
+  howpublished = {Frontiers Research Topic},
+  note         = {Community call for broad-spectrum AI-audio detection research.},
+}
+
+% ─────────────────────────────────────────────────────────────────────────────
+% Generative models (the systems we detect)
+% ─────────────────────────────────────────────────────────────────────────────
+@inproceedings{musicgen_2023,
+  author    = {Jade Copet and Felix Kreuk and Itai Gat and Tal Remez and David Kant and Gabriel Synnaeve and Yossi Adi and Alexandre D{\'e}fossez},
+  title     = {Simple and Controllable Music Generation},
+  booktitle = {Proc.\ NeurIPS},
+  year      = {2023},
+}
+
+@inproceedings{audiogen_2023,
+  author    = {Felix Kreuk and Gabriel Synnaeve and Adam Polyak and Uriel Singer and Alexandre D{\'e}fossez and Jade Copet and Devi Parikh and Yaniv Taigman and Yossi Adi},
+  title     = {{AudioGen}: Textually Guided Audio Generation},
+  booktitle = {Proc.\ ICLR},
+  year      = {2023},
+}
+
+@article{audioldm2_2024,
+  author    = {Haohe Liu and Qiao Tian and Yi Yuan and Xubo Liu and Xinhao Mei and Qiuqiang Kong and Yuping Wang and Wenwu Wang and Yuxuan Wang and Mark D.\ Plumbley},
+  title     = {{AudioLDM 2}: Learning Holistic Audio Generation with Self-Supervised Pretraining},
+  journal   = {IEEE/ACM Transactions on Audio, Speech, and Language Processing},
+  year      = {2024},
+  doi       = {10.1109/TASLP.2024.3399607},
+}
+
+@misc{suno_platform,
+  author       = {{Suno AI}},
+  title        = {{Suno}: Text-to-Music Generation Platform},
+  year         = {2024},
+  howpublished = {\url{https://suno.com}},
+  note         = {Models: chirp-v2-xxl-alpha, chirp-v3, chirp-v3.5.},
+}
+
+@misc{udio_platform,
+  author       = {{Uncharted Labs}},
+  title        = {{Udio}: Text-to-Music Generation Platform},
+  year         = {2024},
+  howpublished = {\url{https://udio.com}},
+}
+
+% ─────────────────────────────────────────────────────────────────────────────
+% Training corpora
+% ─────────────────────────────────────────────────────────────────────────────
+@inproceedings{ljspeech,
+  author       = {Keith Ito and Linda Johnson},
+  title        = {The {LJ Speech} Dataset},
+  year         = {2017},
+  howpublished = {\url{https://keithito.com/LJ-Speech-Dataset/}},
+}
+
+@inproceedings{musiccaps_2023,
+  author    = {Andrea Agostinelli and Timo I. Denk and Zal{\'a}n Borsos and Jesse Engel and Mauro Verzetti and Antoine Caillon and Qingqing Huang and Aren Jansen and Adam Roberts and Marco Tagliasacchi and Matt Sharifi and Neil Zeghidour and Christian Frank},
+  title     = {{MusicLM}: Generating Music From Text},
+  booktitle = {arXiv:2301.11325},
+  year      = {2023},
+  note      = {Introduces the MusicCaps evaluation dataset.},
+}
+
+@inproceedings{fma_2017,
+  author    = {Micha{\"e}l Defferrard and Kirell Benzi and Pierre Vandergheynst and Xavier Bresson},
+  title     = {{FMA}: A Dataset for Music Analysis},
+  booktitle = {Proc.\ ISMIR},
+  year      = {2017},
+}
+
+@inproceedings{esc50_2015,
+  author    = {Karol J. Piczak},
+  title     = {{ESC-50}: Dataset for Environmental Sound Classification},
+  booktitle = {Proc.\ ACM Multimedia},
+  year      = {2015},
+}
+
+@article{fsd50k_2022,
+  author    = {Eduardo Fonseca and Xavier Favory and Jordi Pons and Frederic Font and Xavier Serra},
+  title     = {{FSD50K}: An Open Dataset of Human-Labeled Sound Events},
+  journal   = {IEEE/ACM Transactions on Audio, Speech, and Language Processing},
+  volume    = {30},
+  pages     = {829--852},
+  year      = {2022},
+}
+
+% ─────────────────────────────────────────────────────────────────────────────
+% Tooling / frameworks
+% ─────────────────────────────────────────────────────────────────────────────
+@inproceedings{pytorch,
+  author    = {Adam Paszke and others},
+  title     = {{PyTorch}: An Imperative Style, High-Performance Deep Learning Library},
+  booktitle = {Proc.\ NeurIPS},
+  year      = {2019},
+}
+
+@misc{torchaudio,
+  author       = {Yao-Yuan Yang and others},
+  title        = {{Torchaudio}: Building Blocks for Audio and Speech Processing},
+  year         = {2022},
+  howpublished = {\url{https://pytorch.org/audio/}},
+}
+
+@misc{huggingface_transformers,
+  author       = {Thomas Wolf and others},
+  title        = {{Transformers}: State-of-the-Art Natural Language Processing},
+  booktitle    = {Proc.\ EMNLP (System Demonstrations)},
+  year         = {2020},
+}
+
+@misc{ebu_r128,
+  author       = {{European Broadcasting Union}},
+  title        = {{EBU R~128}: Loudness Normalisation and Permitted Maximum Level of Audio Signals},
+  year         = {2020},
+  howpublished = {EBU Recommendation},
+}
+
+@inproceedings{gradcam,
+  author    = {Ramprasaath R. Selvaraju and Michael Cogswell and Abhishek Das and Ramakrishna Vedantam and Devi Parikh and Dhruv Batra},
+  title     = {{Grad-CAM}: Visual Explanations from Deep Networks via Gradient-Based Localization},
+  booktitle = {Proc.\ IEEE ICCV},
+  year      = {2017},
+}
