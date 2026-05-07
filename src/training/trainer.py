@@ -38,6 +38,7 @@ class Trainer:
             num_classes=config.model.num_classes,
             ssl_model_name=config.model.ssl_model_name,
             freeze_ssl_feature_extractor=config.model.freeze_ssl_feature_extractor,
+            freeze_ssl_encoder=bool(getattr(config.model, "freeze_ssl_encoder", False)),
             dropout=config.model.dropout,
         ).to(self.device)
 
