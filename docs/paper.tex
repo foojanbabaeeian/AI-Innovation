@@ -42,7 +42,7 @@ for AI-Generated Audio Across Speech, Music, and Environmental Sounds}}
 \maketitle
 
 \begin{abstract}
-Recent advances in generative audio---neural vocoders, text-to-music systems (MusicGen, Suno, Udio), and text-to-audio diffusion (AudioGen, AudioLDM2)---have outpaced detection research, which remains concentrated on voice anti-spoofing. We present a three-branch late-fusion detector combining mel-spectrogram CNNs, self-supervised WavLM embeddings, and RawNet2-style learnable SincNet filters via multi-head attention, trained jointly with a dual-head MSE + cross-entropy loss. Beyond voice, our evaluation spans music (MusicCaps, FMA-small as real; MusicGen, Suno chirp-v2/v3/v3.5, Udio-30s/120s as AI-generated) and environmental sounds (ESC-50, FSD50K as real; AudioGen, AudioLDM2 as AI-generated)---180\,K segments across three domains. On ASVspoof 2019 LA we achieve \NUM\% EER, matching published SSL-based baselines. On music detection with cross-generator splits we report \NUM\% EER, and on environmental sound detection \NUM\% EER---the first systematic evaluation across all three domains in a unified model. Ablations show the attention fusion outperforms simple concatenation by \NUM\% EER and each branch contributes non-redundantly. We release the unified dataset manifests, codec-augmented training pipeline, and evaluation harness.
+Recent advances in generative audio---neural vocoders, text-to-music systems (MusicGen, Suno, Udio), and text-to-audio diffusion (AudioGen, AudioLDM2)---have outpaced detection research, which remains concentrated on voice anti-spoofing. We present a three-branch late-fusion detector combining mel-spectrogram CNNs, self-supervised WavLM embeddings, and RawNet2-style learnable SincNet filters via multi-head attention, trained jointly with a dual-head MSE + cross-entropy loss. Beyond voice, our evaluation spans music (MusicCaps, FMA-small as real; MusicGen, Suno chirp-v2/v3/v3.5, Udio-30s/120s as AI-generated) and environmental sounds (ESC-50, FSD50K as real; AudioGen, AudioLDM2 as AI-generated)---297\,K segments across three domains. On ASVspoof 2019 LA we achieve \NUM\% EER, matching published SSL-based baselines. On music detection with cross-generator splits we report \NUM\% EER, and on environmental sound detection \NUM\% EER---the first systematic evaluation across all three domains in a unified model. Ablations show the attention fusion outperforms simple concatenation by \NUM\% EER and each branch contributes non-redundantly. We release the unified dataset manifests, codec-augmented training pipeline, and evaluation harness.
 \end{abstract}
 
 \section{Introduction}
@@ -55,7 +55,7 @@ Existing detection literature, however, concentrates almost exclusively on synth
 This paper makes three contributions:
 \begin{enumerate}
     \item A unified three-branch fusion architecture that jointly processes mel-spectrogram features (ResNet-style CNN), self-supervised speech embeddings (frozen WavLM-base-plus~\cite{wavlm} with learned layer attention), and raw waveforms (RawNet2-style SincNet~\cite{sincnet,rawnet2}), fused via multi-head attention with a dual-head MSE + CE loss.
-    \item The first multi-domain evaluation spanning voice (ASVspoof~2019/2021, 19 attack types), music (MusicGen~\cite{musicgen_2023} + Suno v2/v3/v3.5 + Udio 30s/120s---5 commercial generator variants), and environmental sounds (AudioGen~\cite{audiogen_2023}, AudioLDM2~\cite{audioldm2_2024}), totalling \TODO{$\sim$196}\,K segments balanced at $\approx$1:1 real/fake.
+    \item The first multi-domain evaluation spanning voice (ASVspoof~2019/2021, 19 attack types), music (MusicGen~\cite{musicgen_2023} + Suno v2/v3/v3.5 + Udio 30s/120s---5 commercial generator variants), and environmental sounds (AudioGen~\cite{audiogen_2023}, AudioLDM2~\cite{audioldm2_2024}), totalling $\sim$297\,K segments balanced at $\approx$1:1 real/fake.
     \item Codec-robust training via on-the-fly MP3/AAC/Opus/$\mu$-law augmentation, demonstrating the detector remains reliable under real-world compressed-transmission conditions and extending the direction explored by RawNetLite~\cite{rawnetlite_2025}.
 \end{enumerate}
 
@@ -145,7 +145,7 @@ At training time each segment is randomly passed through one of: MP3 (32/64/128\
 \subsection{Data}
 \label{sec:data}
 
-We assemble a multi-domain corpus of \TODO{$\approx$196}\,K segments across 11 source datasets (Table~\ref{tab:data}). Voice real audio comes from LJSpeech~\cite{ljspeech} and the ASVspoof~2019/2021 bonafide utterances~\cite{asvspoof2019,asvspoof2021}; voice fake from ASVspoof~2019/2021 spoofed (19 TTS/VC attack types, A01--A19). Music real draws on MusicCaps~\cite{musiccaps_2023} and FMA-small~\cite{fma_2017}; fake from MusicGen~\cite{musicgen_2023}, Suno (chirp-v2-xxl / v3 / v3.5)~\cite{suno_platform}, and Udio (30s / 120s)~\cite{udio_platform}. Environmental sounds use ESC-50~\cite{esc50_2015} and FSD50K~\cite{fsd50k_2022} on the real side, and AudioGen~\cite{audiogen_2023} and AudioLDM~2~\cite{audioldm2_2024} on the fake side. All audio is resampled to 16\,kHz mono, loudness-normalised to $-23$~LUFS following the EBU~R128 standard~\cite{ebu_r128} via \texttt{pyloudnorm}, and segmented into 4-second windows with a 2-second hop (50\% overlap) using PyTorch~\cite{pytorch} and torchaudio~\cite{torchaudio}.
+We assemble a multi-domain corpus of $\approx$297\,K segments across 11 source datasets (Table~\ref{tab:data}). Voice real audio comes from LJSpeech~\cite{ljspeech} and the ASVspoof~2019/2021 bonafide utterances~\cite{asvspoof2019,asvspoof2021}; voice fake from ASVspoof~2019/2021 spoofed (19 TTS/VC attack types, A01--A19). Music real draws on MusicCaps~\cite{musiccaps_2023} and FMA-small~\cite{fma_2017}; fake from MusicGen~\cite{musicgen_2023}, Suno (chirp-v2-xxl / v3 / v3.5)~\cite{suno_platform}, and Udio (30s / 120s)~\cite{udio_platform}. Environmental sounds use ESC-50~\cite{esc50_2015} and FSD50K~\cite{fsd50k_2022} on the real side, and AudioGen~\cite{audiogen_2023} and AudioLDM~2~\cite{audioldm2_2024} on the fake side. All audio is resampled to 16\,kHz mono, loudness-normalised to $-23$~LUFS following the EBU~R128 standard~\cite{ebu_r128} via \texttt{pyloudnorm}, and segmented into 4-second windows with a 2-second hop (50\% overlap) using PyTorch~\cite{pytorch} and torchaudio~\cite{torchaudio}.
 
 \begin{table}[t]
 \centering
@@ -160,19 +160,22 @@ Voice & LJSpeech & R & $\sim$11\,K \\
 Voice & ASVspoof~2019~LA & R & \\
 Voice & ASVspoof~2019~LA & F & $\sim$59\,K \\
 Voice & ASVspoof~2021~LA & R/F & $\sim$9\,K \\
+\multicolumn{3}{l}{\textit{Voice subtotal (32,818 real / 43,080 fake)}} & 75{,}898 \\
 \midrule
 Music & MusicCaps & R & $\sim$5\,K \\
 Music & FMA-small & R & $\sim$35\,K \\
 Music & MusicGen-small & F & $\sim$10\,K \\
 Music & \textbf{Suno} (v2/v3/v3.5) & F & $\sim$20\,K \\
 Music & \textbf{Udio} (30s/120s) & F & $\sim$20\,K \\
+\multicolumn{3}{l}{\textit{Music subtotal (19,639 real / 79,022 fake)}} & 98{,}661 \\
 \midrule
 Non-human & ESC-50 & R & $\sim$6\,K \\
 Non-human & FSD50K eval & R & $\sim$30\,K \\
 Non-human & AudioGen & F & $\sim$0.5\,K \\
 Non-human & AudioLDM2 & F & $\sim$3\,K \\
+\multicolumn{3}{l}{\textit{Env.\ subtotal (92,399 real / 30,522 fake)}} & 122{,}921 \\
 \midrule
-\multicolumn{3}{l}{\textbf{Total}} & $\approx$180\,K \\
+\multicolumn{3}{l}{\textbf{Total (144,856 real / 152,624 fake)}} & \textbf{297{,}480} \\
 \bottomrule
 \end{tabular}
 \end{table}
