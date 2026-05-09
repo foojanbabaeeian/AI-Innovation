@@ -1,5 +1,5 @@
 data:
-  manifest_path: "data/metadata/master_manifest.csv"
+  manifest_path: "data/metadata/master_manifest_segmented.csv"
   data_root: "data"
   target_sr: 16000
   segment_length: 64000  # 4 seconds @ 16kHz

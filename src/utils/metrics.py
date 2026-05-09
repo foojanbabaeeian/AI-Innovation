@@ -14,25 +14,22 @@ def compute_eer(y_true: np.ndarray, y_scores: np.ndarray) -> tuple[float, float]
     """
     Compute Equal Error Rate (EER) -- the primary metric for
     anti-spoofing / deepfake detection (ASVspoof standard).
+
+    EER is the operating point where FAR (FPR) == FRR (FNR).
+    We find the index where |FPR - FNR| is minimised and average the two
+    to get a balanced estimate, which is the standard approach used in the
+    ASVspoof evaluation scripts.
     """
-    from scipy.optimize import brentq
-    from scipy.interpolate import interp1d
     from sklearn.metrics import roc_curve
 
     fpr, tpr, thresholds = roc_curve(y_true, y_scores)
     fnr = 1 - tpr
 
-    # Find the threshold where FPR == FNR
-    try:
-        eer_threshold = brentq(lambda x: interp1d(fpr, thresholds)(x) - interp1d(fnr, thresholds)(x), 0, 1)
-        eer = interp1d(fpr, fnr)(eer_threshold)
-    except ValueError:
-        # Fallback: find closest point
-        idx = np.nanargmin(np.abs(fpr - fnr))
-        eer = (fpr[idx] + fnr[idx]) / 2
-        eer_threshold = thresholds[idx]
+    idx = np.nanargmin(np.abs(fpr - fnr))
+    eer = float((fpr[idx] + fnr[idx]) / 2)
+    eer_threshold = float(thresholds[idx])
 
-    return float(eer), float(eer_threshold)
+    return eer, eer_threshold
 
 
 def compute_metrics(

@@ -68,9 +68,6 @@ class Trainer:
             {"params": ssl_params, "lr": config.training.learning_rate * 0.1},
         ], weight_decay=config.training.weight_decay)
 
-        # Scheduler
-        self.scheduler = self._build_scheduler()
-
         # Codec augmentation: applied ONLY to the train split. Reads bitrate
         # lists + probability from config.augmentation. If ffmpeg is missing,
         # the augmentor logs a warning and falls back to VoIP-only transforms.
@@ -85,7 +82,9 @@ class Trainer:
         if sources:
             print(f"Source filter active: {sources}")
 
-        # Data -- parallel loading via num_workers
+        # Data -- parallel loading via num_workers.
+        # Must be built BEFORE the scheduler so _build_scheduler can use
+        # len(self.train_loader) for the cosine period.
         self.train_loader = build_dataloader(
             config.data.manifest_path, config.data.data_root, "train",
             batch_size=config.data.batch_size, num_workers=config.data.num_workers,
@@ -100,6 +99,9 @@ class Trainer:
             sources=sources,
             # No augmentor for val: evaluation must be deterministic.
         )
+
+        # Scheduler — built after train_loader so cosine period is exact.
+        self.scheduler = self._build_scheduler()
 
         # State
         self.current_epoch = 0
@@ -120,7 +122,7 @@ class Trainer:
 
     def _build_scheduler(self):
         cfg = self.config.training
-        total_steps = cfg.epochs * len(self.train_loader) if hasattr(self, "train_loader") else cfg.epochs * 1000
+        total_steps = cfg.epochs * len(self.train_loader)
 
         if cfg.scheduler == "cosine":
             return torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
