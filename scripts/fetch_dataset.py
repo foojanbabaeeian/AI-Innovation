@@ -24,6 +24,7 @@ import csv
 import importlib.util
 import logging
 import os
+import shutil
 import sys
 import urllib.request
 import tarfile
@@ -390,8 +391,20 @@ def fetch_esc50():
             log.info("ESC-50 already cloned.")
 
         log.info("Ingesting ESC-50...")
-        audioset = _load_ingestor("audioset")
-        n = audioset.ingest_esc50(str(esc50_dir), str(out_dir), copy=True, non_human_only=True)
+        audio_src = esc50_dir / "audio"
+        meta_csv  = esc50_dir / "meta" / "esc50.csv"
+        # ESC-50 targets 20-29 are human non-speech sounds (crying_baby … drinking_sipping)
+        HUMAN_TARGETS = set(range(20, 30))
+        out_dir.mkdir(parents=True, exist_ok=True)
+        n = 0
+        with open(meta_csv, newline="", encoding="utf-8") as _f:
+            for row in csv.DictReader(_f):
+                if int(row["target"]) in HUMAN_TARGETS:
+                    continue
+                dst = out_dir / row["filename"]
+                if not dst.exists():
+                    shutil.copy2(audio_src / row["filename"], dst)
+                n += 1
         log.info(f"ESC-50 ingest done: {n} clips -> {out_dir}")
         existing = list(out_dir.glob("*.wav"))
 
