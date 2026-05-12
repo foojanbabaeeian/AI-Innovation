@@ -1,0 +1,64 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <div class="logo">
+        <div class="dot" id="status-dot"></div>
+        <h1>AI Audio Detector</h1>
+      </div>
+      <div class="backend-status" id="backend-status">offline</div>
+    </header>
+
+    <main>
+      <button id="toggle-btn" class="toggle idle">
+        <span class="btn-label">Activate</span>
+        <span class="btn-sub">Start listening to this tab</span>
+      </button>
+
+      <section class="result" id="result" hidden>
+        <div class="verdict real" id="verdict">
+          <div class="verdict-icon" id="verdict-icon"></div>
+          <div class="verdict-text">
+            <span class="verdict-label" id="verdict-label">Human</span>
+            <span class="verdict-sub" id="verdict-sub">No AI detected</span>
+          </div>
+          <span class="verdict-pct" id="verdict-pct">0%</span>
+        </div>
+        <div class="meter-wrap">
+          <div class="meter" id="meter"></div>
+          <div class="threshold-line" id="threshold-line"></div>
+        </div>
+        <div class="meta">
+          <span>AI score: <b id="score">0.00</b></span>
+          <span>Smoothed: <b id="smoothed">0.00</b></span>
+          <span id="confidence">--%</span>
+        </div>
+      </section>
+
+      <section class="alerts" id="alerts"></section>
+
+      <details class="settings">
+        <summary>Settings</summary>
+        <label>
+          Backend URL
+          <input type="text" id="backend-url" placeholder="ws://localhost:8765/ws" />
+        </label>
+        <label>
+          Threshold <span id="threshold-value">0.70</span>
+          <input type="range" id="threshold" min="0" max="1" step="0.01" value="0.7" />
+        </label>
+        <button id="save-settings" class="secondary">Save</button>
+      </details>
+    </main>
+
+    <footer>
+      <span id="stats">0 windows · 0 AI detections</span>
+    </footer>
+
+    <script src="popup.js" type="module"></script>
+  </body>
+</html>

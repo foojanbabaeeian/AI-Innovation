@@ -1,0 +1,46 @@
+{
+  "manifest_version": 3,
+  "name": "AI Audio Detector",
+  "version": "0.1.0",
+  "description": "Real-time detection of AI-generated audio in the current browser tab.",
+  "action": {
+    "default_title": "AI Audio Detector",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/logo.png",
+      "32": "icons/logo.png",
+      "48": "icons/logo.png",
+      "128": "icons/logo.png"
+    }
+  },
+  "icons": {
+    "16": "icons/logo.png",
+    "32": "icons/logo.png",
+    "48": "icons/logo.png",
+    "128": "icons/logo.png"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "permissions": [
+    "tabCapture",
+    "offscreen",
+    "storage",
+    "notifications",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "ws://localhost/*",
+    "wss://localhost/*",
+    "http://localhost/*",
+    "https://localhost/*"
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["audio-worklet.js"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "minimum_chrome_version": "116"
+}

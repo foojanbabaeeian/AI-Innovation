@@ -5,8 +5,47 @@ Loaded from YAML config files in configs/ directory.
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import List
 
 import yaml
+
+
+@dataclass
+class MelConfig:
+    """Mel-spectrogram extraction parameters."""
+    n_mels: int = 128
+    n_fft: int = 1024
+    hop_length: int = 256
+    f_min: int = 0
+    f_max: int = 8000
+    power: float = 2.0
+    normalize: bool = True
+
+
+@dataclass
+class AudioConfig:
+    """Audio preprocessing parameters."""
+    sample_rate: int = 16000
+    duration_sec: float = 4.0
+    n_samples: int = 64000
+    mel: MelConfig = field(default_factory=MelConfig)
+
+
+@dataclass
+class CodecConfig:
+    """Codec augmentation bitrate options."""
+    mp3_bitrates: List[int] = field(default_factory=lambda: [32, 64, 128])
+    aac_bitrates: List[int] = field(default_factory=lambda: [32, 64])
+    opus_bitrates: List[int] = field(default_factory=lambda: [6, 12, 24])
+    voip_sample_rate: int = 8000
+
+
+@dataclass
+class AugmentationConfig:
+    """Data augmentation parameters."""
+    enabled: bool = True
+    probability: float = 0.5
+    codec: CodecConfig = field(default_factory=CodecConfig)
 
 
 @dataclass
@@ -64,6 +103,8 @@ class Config:
     model: ModelConfig = field(default_factory=ModelConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
+    audio: AudioConfig = field(default_factory=AudioConfig)
+    augmentation: AugmentationConfig = field(default_factory=AugmentationConfig)
 
     @classmethod
     def from_yaml(cls, path: str) -> "Config":
@@ -79,6 +120,29 @@ class Config:
         ]:
             if section_name in raw:
                 setattr(config, section_name, section_cls(**raw[section_name]))
+
+        # Handle nested audio config
+        if "audio" in raw:
+            audio_raw = dict(raw["audio"])
+            mel_raw = audio_raw.pop("mel", {})
+            audio_cfg = AudioConfig(**audio_raw)
+            if mel_raw:
+                audio_cfg.mel = MelConfig(**mel_raw)
+            config.audio = audio_cfg
+
+        # Handle nested augmentation config
+        if "augmentation" in raw:
+            aug_raw = dict(raw["augmentation"])
+            codec_raw = aug_raw.pop("codec", {})
+            aug_cfg = AugmentationConfig(**aug_raw)
+            if codec_raw:
+                aug_cfg.codec = CodecConfig(**codec_raw)
+            config.augmentation = aug_cfg
+
+        # Keep audio in sync with data.target_sr and data.segment_length
+        config.audio.sample_rate = config.data.target_sr
+        config.audio.n_samples = config.data.segment_length
+
         return config
 
     def to_yaml(self, path: str):
