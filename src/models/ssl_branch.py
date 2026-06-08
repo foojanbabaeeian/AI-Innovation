@@ -26,9 +26,15 @@ class SSLBranch(nn.Module):
         embed_dim: int = 128,
         freeze_encoder: bool = False,
         freeze_feature_extractor: bool = True,
+        ssl_layer_mode: str = "learned",
     ):
         super().__init__()
         self.embed_dim = embed_dim
+        if ssl_layer_mode not in ("learned", "last_layer"):
+            raise ValueError(
+                f"ssl_layer_mode must be 'learned' or 'last_layer'; got {ssl_layer_mode!r}"
+            )
+        self.ssl_layer_mode = ssl_layer_mode
 
         # Load pretrained SSL model.
         # use_safetensors=True avoids the torch.load CVE-2025-32434 restriction
@@ -48,9 +54,12 @@ class SSLBranch(nn.Module):
         elif freeze_feature_extractor:
             self.ssl_model.feature_extractor._freeze_parameters()
 
-        # Weighted layer aggregation: learn which transformer layers matter most
+        # Weighted layer aggregation (learned) or last-layer-only ablation (§6.3).
         num_layers = self.ssl_model.config.num_hidden_layers + 1  # +1 for CNN feature output
-        self.layer_weights = nn.Parameter(torch.ones(num_layers) / num_layers)
+        if ssl_layer_mode == "learned":
+            self.layer_weights = nn.Parameter(torch.ones(num_layers) / num_layers)
+        else:
+            self.register_parameter("layer_weights", None)
 
         # Projection head
         self.projector = nn.Sequential(
@@ -68,11 +77,13 @@ class SSLBranch(nn.Module):
         outputs = self.ssl_model(x, output_hidden_states=True)
         hidden_states = outputs.hidden_states  # tuple of (batch, time, 768)
 
-        # Weighted sum across all transformer layers
-        stacked = torch.stack(hidden_states, dim=0)  # (num_layers, batch, time, hidden)
-        weights = torch.softmax(self.layer_weights, dim=0)
-        weights = weights.view(-1, 1, 1, 1)
-        weighted = (stacked * weights).sum(dim=0)  # (batch, time, hidden)
+        if self.ssl_layer_mode == "last_layer":
+            weighted = hidden_states[-1]
+        else:
+            stacked = torch.stack(hidden_states, dim=0)  # (num_layers, batch, time, hidden)
+            weights = torch.softmax(self.layer_weights, dim=0)
+            weights = weights.view(-1, 1, 1, 1)
+            weighted = (stacked * weights).sum(dim=0)  # (batch, time, hidden)
 
         # Mean pooling over time
         pooled = weighted.mean(dim=1)  # (batch, hidden)

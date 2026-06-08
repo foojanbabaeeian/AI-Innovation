@@ -87,6 +87,7 @@ class MultiBranchFusionModel(nn.Module):
         dropout: float = 0.1,
         disable_branches: list[str] | None = None,
         fusion_method: str = "attention",
+        ssl_layer_mode: str = "learned",
     ):
         super().__init__()
         self.embed_dim = embed_dim
@@ -119,6 +120,7 @@ class MultiBranchFusionModel(nn.Module):
                 model_name=ssl_model_name,
                 embed_dim=embed_dim,
                 freeze_feature_extractor=freeze_ssl_feature_extractor,
+                ssl_layer_mode=ssl_layer_mode,
             )
         if "rawnet" in self.active_branches:
             self.rawnet_branch = RawNetBranch(

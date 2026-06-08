@@ -41,6 +41,7 @@ class Trainer:
             dropout=config.model.dropout,
             disable_branches=list(config.model.disable_branches),
             fusion_method=config.model.fusion_method,
+            ssl_layer_mode=config.model.ssl_layer_mode,
         ).to(self.device)
         print(f"Model: active_branches={self.model.active_branches} "
               f"fusion_method={self.model.fusion_method}")

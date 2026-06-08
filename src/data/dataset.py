@@ -84,9 +84,24 @@ class ManifestAudioDataset(Dataset):
     def __len__(self) -> int:
         return len(self.records)
 
+    def _resolve_path(self, file_path: str) -> Path:
+        """Map manifest paths (Colab absolute or relative) to a local file."""
+        fp = str(file_path).replace("\\", "/")
+        # Strip known absolute prefixes so data_root replaces the Colab/Drive root.
+        for prefix in (
+            "/content/drive/MyDrive/AI-Innovation-Data/",
+            "/content/drive/My Drive/AI-Innovation-Data/",
+        ):
+            if fp.startswith(prefix):
+                return self.data_root / fp[len(prefix):]
+        p = Path(file_path)
+        if p.is_absolute() and p.exists():
+            return p
+        return self.data_root / file_path
+
     def __getitem__(self, idx: int) -> dict:
         row = self.records[idx]
-        path = self.data_root / row["file_path"]
+        path = self._resolve_path(row["file_path"])
 
         # Support both "label" and "ai_ratio" column names in the manifest
         label = float(row.get("label", row.get("ai_ratio", 0.0)))
@@ -107,11 +122,20 @@ class ManifestAudioDataset(Dataset):
 
     def _load_audio(self, path: str) -> torch.Tensor:
         """Load audio, convert to mono, resample, pad/truncate to segment_length."""
+        wav, sr = None, None
+
+        # soundfile first — works reliably on Google Drive FUSE mounts in Colab;
+        # torchaudio 2.x may route through torchcodec and fail with "Input/output error".
         try:
-            wav, sr = torchaudio.load(path)
-        except Exception as exc:
-            logger.warning("Failed to load %s: %s — returning silence", path, exc)
-            return torch.zeros(1, self.segment_length)
+            import soundfile as sf
+            data, sr = sf.read(path, dtype="float32", always_2d=True)
+            wav = torch.from_numpy(data.T.copy())
+        except Exception:
+            try:
+                wav, sr = torchaudio.load(path)
+            except Exception as exc:
+                logger.warning("Failed to load %s: %s — returning silence", path, exc)
+                return torch.zeros(1, self.segment_length)
 
         # Mono
         if wav.shape[0] > 1:

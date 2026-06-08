@@ -73,10 +73,10 @@ class SincConv(nn.Module):
         f_high = torch.sin(low * self.n_) / (self.n_ / 2 + 1e-8) * self.window
         band_pass_left = (f_low - f_high) / (2 * self.sample_rate)
 
-        # Symmetric filter
+        # Symmetric filter — center is already (out_channels, 1).
         band_pass_center = (high - low) / self.sample_rate
         band_pass = torch.cat(
-            [band_pass_left, band_pass_center.unsqueeze(1), band_pass_left.flip(dims=[1])],
+            [band_pass_left, band_pass_center, band_pass_left.flip(dims=[1])],
             dim=1,
         )
         band_pass = band_pass / (band_pass.abs().sum(dim=1, keepdim=True) + 1e-8)

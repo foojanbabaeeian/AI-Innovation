@@ -33,6 +33,9 @@ def export_to_onnx(
         num_attention_layers=config.model.num_attention_layers,
         num_classes=config.model.num_classes,
         ssl_model_name=config.model.ssl_model_name,
+        disable_branches=list(config.model.disable_branches),
+        fusion_method=config.model.fusion_method,
+        ssl_layer_mode=config.model.ssl_layer_mode,
     )
 
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)

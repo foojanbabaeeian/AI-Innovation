@@ -71,6 +71,11 @@ def main():
         help="Whitelist of source_dataset values (e.g. asvspoof2019 asvspoof2021). "
              "Enables cross-dataset training and single-domain ablations.",
     )
+    parser.add_argument(
+        "--ssl-layer-mode", type=str, default=None,
+        choices=["learned", "last_layer"],
+        help="WavLM layer pooling: 'learned' (default) or 'last_layer' (§6.3 ablation).",
+    )
     args = parser.parse_args()
 
     config = Config.from_yaml(args.config)
@@ -92,6 +97,8 @@ def main():
         config.augmentation.enabled = False
     if args.sources:
         config.data.sources = list(args.sources)
+    if args.ssl_layer_mode is not None:
+        config.model.ssl_layer_mode = args.ssl_layer_mode
 
     trainer = Trainer(config)
 

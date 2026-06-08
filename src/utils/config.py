@@ -82,6 +82,9 @@ class ModelConfig:
     #   "average"   = mean pooling across branches (ablation baseline)
     disable_branches: List[str] = field(default_factory=list)
     fusion_method: str = "attention"
+    # "learned" = softmax weights over all WavLM layers (default)
+    # "last_layer" = use final transformer layer only (§6.3 ablation)
+    ssl_layer_mode: str = "learned"
 
 
 @dataclass

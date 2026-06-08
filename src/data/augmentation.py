@@ -255,6 +255,41 @@ class CodecAugmentor:
         )
         return upsampler(voip_waveform)
 
+    def apply_codec(self, waveform: torch.Tensor, codec: str, bitrate: int | None = None) -> torch.Tensor:
+        """Apply a specific codec condition (for §5.4 eval_codec.py).
+
+        Args:
+            waveform: (1, N) tensor at self.sample_rate.
+            codec: One of clean, mp3, aac, opus, voip.
+            bitrate: Required for mp3/aac/opus (kbps).
+        """
+        if codec == "clean":
+            return waveform
+
+        if codec == "voip":
+            out = self.apply_voip(waveform)
+        elif codec == "mp3":
+            if bitrate is None:
+                raise ValueError("bitrate required for mp3")
+            out = self._apply_ffmpeg_codec(waveform, "libmp3lame", bitrate)
+        elif codec == "aac":
+            if bitrate is None:
+                raise ValueError("bitrate required for aac")
+            out = self._apply_ffmpeg_codec(waveform, "aac", bitrate)
+        elif codec == "opus":
+            if bitrate is None:
+                raise ValueError("bitrate required for opus")
+            out = self._apply_ffmpeg_codec(waveform, "libopus", bitrate)
+        else:
+            raise ValueError(f"Unknown codec {codec!r}")
+
+        target_len = waveform.shape[1]
+        if out.shape[1] > target_len:
+            out = out[:, :target_len]
+        elif out.shape[1] < target_len:
+            out = torch.nn.functional.pad(out, (0, target_len - out.shape[1]))
+        return out
+
     def __call__(self, waveform: torch.Tensor) -> torch.Tensor:
         """Apply random codec augmentation with configured probability.
 

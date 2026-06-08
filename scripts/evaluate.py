@@ -32,8 +32,13 @@ import argparse
 import csv
 import json
 import re
+import sys
 from collections import defaultdict
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 import numpy as np
 import torch
@@ -62,6 +67,7 @@ def load_model(config: Config, checkpoint_path: str, device: torch.device) -> Mu
         dropout=config.model.dropout,
         disable_branches=list(config.model.disable_branches),
         fusion_method=config.model.fusion_method,
+        ssl_layer_mode=config.model.ssl_layer_mode,
     ).to(device)
 
     ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
